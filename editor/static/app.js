@@ -1,5 +1,14 @@
 /* Drawing Language Editor — v0.1 */
 
+// API base: works locally (relative /render) AND after deploy (proxy path).
+// The sentinel is replaced with the actual proxy path at deploy time.
+const API_BASE = (() => {
+  const sentinel = "__PORT_8765__";
+  // If sentinel was replaced, use it. Otherwise fall back to same-origin (dev).
+  return sentinel.startsWith("__") ? "" : sentinel;
+})();
+const api = (path) => API_BASE + path;
+
 const $ = (id) => document.getElementById(id);
 const editor = $("editor");
 const preview = $("preview");
@@ -23,7 +32,7 @@ async function renderProgram({ silent = false } = {}) {
   if (!silent) setStatus("busy", "Rendering…");
 
   try {
-    const r = await fetch("/render", {
+    const r = await fetch(api("/render"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ program, backend: "svg" }),
@@ -66,8 +75,8 @@ function scheduleAutoRender() {
 
 async function loadExamples() {
   const [rEx, rDr] = await Promise.all([
-    fetch("/examples"),
-    fetch("/drawings"),
+    fetch(api("/examples")),
+    fetch(api("/drawings")),
   ]);
   const examples = await rEx.json();
   const drawings = rDr.ok ? await rDr.json() : [];
@@ -174,7 +183,7 @@ function loadExample(ex) {
 // ---------------------------------------------------------------------------
 
 async function loadReference() {
-  const r = await fetch("/reference");
+  const r = await fetch(api("/reference"));
   const ref = await r.json();
   $("spec-version").textContent = ref.spec_version;
 
@@ -207,7 +216,7 @@ async function saveDrawing() {
   if (!name) return;
   setStatus("busy", "Saving…");
   try {
-    const r = await fetch("/save", {
+    const r = await fetch(api("/save"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -242,7 +251,7 @@ function exportSVG() {
 async function exportPDF() {
   setStatus("busy", "Generating PDF…");
   try {
-    const r = await fetch("/export/pdf", {
+    const r = await fetch(api("/export/pdf"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ program: editor.value, backend: "ps" }),

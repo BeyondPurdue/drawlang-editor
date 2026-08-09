@@ -20,13 +20,14 @@ import tempfile
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-# Make the sibling `interpreter` package importable regardless of cwd
+# Make the drawlang package importable when running from the repo root
 ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(ROOT / "interpreter"))
+sys.path.insert(0, str(ROOT / "src"))
 
 from drawlang import SPEC_VERSION, render  # noqa: E402
 from drawlang.errors import DrawLangError  # noqa: E402
@@ -35,6 +36,12 @@ from app.import_library import load_templates, build_catalog  # noqa: E402
 
 
 app = FastAPI(title="Drawing Language Editor", version=SPEC_VERSION)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
