@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drawlang"
+version = "0.2.0"
+description = "Reference interpreter for the Drawing Language v0.2 (Beyond Purdue Editor)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Beyond Purdue contributors" },
+]
+keywords = ["drawing", "vector", "svg", "postscript", "pdf", "cad", "interpreter"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Software Development :: Interpreters",
+]
+dependencies = []
+
+[project.optional-dependencies]
+editor = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2",
+]
+dev = [
+    "pytest>=7",
+]
+
+[project.urls]
+Homepage = "https://github.com/BeyondPurdue/drawlang-editor"
+Repository = "https://github.com/BeyondPurdue/drawlang-editor"
+Issues = "https://github.com/BeyondPurdue/drawlang-editor/issues"
+Community = "https://www.reddit.com/r/BeyondPurdue/"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

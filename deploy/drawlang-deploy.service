@@ -1,0 +1,14 @@
+[Unit]
+Description=Pull-and-deploy Drawing Language Editor from GitHub
+Documentation=https://github.com/BeyondPurdue/drawlang-editor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/deploy-drawlang
+
+# Don't spam the journal on every 2-min tick when there's nothing to do.
+StandardOutput=journal
+StandardError=journal
