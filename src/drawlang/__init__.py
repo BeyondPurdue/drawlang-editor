@@ -32,8 +32,11 @@ from .parser import parse, Statement
 from .interpreter import interpret, PenState
 from .backend import Backend
 
-__version__ = "0.2.0"
-SPEC_VERSION = "0.2"
+__version__ = "0.3.0"
+SPEC_VERSION = "0.3"
+# v0.3: FLOAT type removed. All numeric args are INT (signed 16-bit).
+# Literals with a decimal point are accepted and rounded half-toward-positive-
+# infinity to the nearest int. See spec §3.4.
 
 
 def render(program_text: str, backend: str = "svg", **backend_options):

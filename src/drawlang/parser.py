@@ -18,6 +18,11 @@ Key design notes tied to the spec:
   is stripped before tokenization. A `#` inside a `tx` string argument is
   literal text (because tx strings extend from a comma to the next `;`, not
   to a newline).
+- Spec §3.4 (v0.3): the language has ONE numeric type, INT (signed 16-bit).
+  A literal written with a decimal point (`0.`, `90.`, `3.14`) is accepted
+  and rounded half-toward-positive-infinity to the nearest int. This matches
+  real ES680 backup data (`tx,0,`) and rejects nothing an ES680 emitter
+  would produce.
 - Spec §3.6: opcodes and modifiers are lowercase; any uppercase form is a
   LexicalError.
 - Spec §6-§7: each opcode has a fixed positional-argument signature; modifiers
@@ -38,8 +43,11 @@ from .errors import LexicalError, SemanticError
 # ---------------------------------------------------------------------------
 
 # Argument type sentinels
+# v0.3: the language has ONE numeric type (INT, signed 16-bit). FLOAT was
+# removed. The parser still accepts numeric literals written with a decimal
+# point (§3.4 grace clause: e.g. `0.`, `90.`, `3.14`) and rounds them
+# half-toward-positive-infinity to the nearest integer.
 INT = "int"
-FLOAT = "float"
 STRING = "string"  # only used by `tx`
 
 # Modifier registry — spec §8
@@ -56,9 +64,9 @@ OPCODE_TABLE: dict[str, dict[str, Any]] = {
     "rt": {"args": [INT, INT], "mods": {"f", "i", "d", "c"}, "string_tail": None},
     "ci": {"args": [INT], "mods": {"f", "d", "c"}, "string_tail": None},
     "tz": {"args": [INT], "mods": set(), "string_tail": None},
-    "tx": {"args": [FLOAT, STRING], "mods": {"c"}, "string_tail": 1},
+    "tx": {"args": [INT, STRING], "mods": {"c"}, "string_tail": 1},
     # ---- Extension opcodes (spec §7) — ADDITIVE ----
-    "ar": {"args": [INT, FLOAT, FLOAT], "mods": {"f", "d", "c"}, "string_tail": None},
+    "ar": {"args": [INT, INT, INT], "mods": {"f", "d", "c"}, "string_tail": None},
     "bz": {"args": [INT] * 6, "mods": {"d", "c"}, "string_tail": None},
     "sp": {"args": None, "mods": {"f", "d", "c"}, "string_tail": None},  # variadic even-count
     "im": {"args": [INT, INT, INT], "mods": set(), "string_tail": None},
@@ -66,7 +74,9 @@ OPCODE_TABLE: dict[str, dict[str, Any]] = {
 
 # Regex for numbers (spec §3.4)
 INTEGER_RE = re.compile(r"^-?\d+$")
-FLOAT_RE = re.compile(r"^-?(\d+\.\d*|\.\d+|\d+\.)$")
+# NUMERIC_RE accepts any decimal literal: integers OR anything with a `.`.
+# All are coerced to int at parse time (round half-toward-positive-infinity).
+NUMERIC_RE = re.compile(r"^-?(\d+|\d+\.\d*|\.\d+|\d+\.)$")
 # Modifiers: bare letter, or `c` followed by digits
 MOD_BARE_RE = re.compile(r"^[a-z]$")
 MOD_COLOR_RE = re.compile(r"^c\d+$")
@@ -90,8 +100,9 @@ class Statement:
     """
     A parsed statement: opcode + positional args + modifiers.
 
-    Positional args are typed Python values: int for INT args, float for FLOAT
-    args, str for STRING args (with all whitespace preserved).
+    Positional args are typed Python values: int for INT args,
+    str for STRING args (with all whitespace preserved).
+    v0.3 has no FLOAT type.
     """
 
     opcode: str
@@ -256,7 +267,7 @@ def _parse_statement(raw: str, index: int) -> Statement:
     """
     Parse one statement (already stripped of its trailing ';').
 
-    The tricky case is `tx`: after the opcode and the first (float) argument,
+    The tricky case is `tx`: after the opcode and the first (angle) argument,
     the entire remainder of the statement is the string argument — including
     any commas, spaces, and whitespace — up to but not including the ';'.
     Modifiers for `tx` are limited to `,c<n>`; because we know `tx` accepts
@@ -324,7 +335,7 @@ def _split_with_string_tail(tail: str, spec: dict) -> list[str]:
     """
     For opcodes with a string-tail argument (currently only `tx`).
 
-    Signature for `tx` is [FLOAT, STRING] with string at index 1.
+    Signature for `tx` is [INT, STRING] with string at index 1 (v0.3).
     Approach: split off the first (float) argument, then peel a trailing
     `,c<digits>` color modifier if present, and the remainder is the string.
 
@@ -427,8 +438,6 @@ def _coerce_arguments(opcode: str, spec: dict, raw_args: list[str]) -> list[Any]
     for i, (arg_type, raw) in enumerate(zip(sig, raw_args)):
         if arg_type == INT:
             result.append(_coerce_int(raw, opcode, i))
-        elif arg_type == FLOAT:
-            result.append(_coerce_float(raw, opcode, i))
         elif arg_type == STRING:
             # No coercion — preserve verbatim (spec §3.4, §6.7)
             result.append(raw)
@@ -437,16 +446,47 @@ def _coerce_arguments(opcode: str, spec: dict, raw_args: list[str]) -> list[Any]
     return result
 
 
+def _round_half_up(value: float) -> int:
+    """
+    Round a float to an int using round-half-toward-positive-infinity.
+
+    Spec §3.4 (v0.3): "half goes below, over the half goes to the next integer."
+
+    Examples:
+      0.4  → 0     0.5  → 1     0.6  → 1
+     -0.4  → 0    -0.5  → 0    -0.6  → -1
+      1.5  → 2    -1.5  → -1    3.14 → 3    89.5 → 90    89.4 → 89
+
+    NOTE: this is deliberately NOT Python's built-in round() (banker's
+    rounding, which rounds 0.5 to nearest even). It is the classical
+    school-math rule the user asked for. Implemented as math.floor(x + 0.5)
+    to avoid float-format drift from a plain int(x + 0.5).
+    """
+    import math
+    return math.floor(value + 0.5)
+
+
 def _coerce_int(raw: str, opcode: str, idx: int = -1) -> int:
+    """
+    Coerce a numeric literal to int.
+
+    v0.3 (spec §3.4): the language has one numeric type, INT. The parser
+    still accepts a literal written with a decimal point (e.g. `0.`, `90.`,
+    `3.14`) as a grace clause and rounds it half-toward-positive-infinity
+    to the nearest int. Non-numeric input is rejected.
+    """
     raw = raw.strip()
-    if not INTEGER_RE.match(raw):
+    if INTEGER_RE.match(raw):
+        value = int(raw)
+    elif NUMERIC_RE.match(raw):
+        # Has a decimal point somewhere — parse as float, then round.
+        value = _round_half_up(float(raw))
+    else:
         pos = f" (arg #{idx})" if idx >= 0 else ""
         raise SemanticError(
-            f"'{opcode}'{pos}: expected integer, got {raw!r} (spec §3.4)"
+            f"'{opcode}'{pos}: expected numeric literal, got {raw!r} (spec §3.4)"
         )
-    value = int(raw)
-    # Spec §4.3: default range i2 (int16). We allow the language-level range
-    # only; specific opcodes can enforce tighter positive-only ranges.
+    # Spec §4.3: default range i2 (int16).
     if not (-32768 <= value <= 32767):
         raise SemanticError(
             f"'{opcode}': integer {value} out of range [-32768, 32767] (spec §4.3)"
@@ -454,15 +494,7 @@ def _coerce_int(raw: str, opcode: str, idx: int = -1) -> int:
     return value
 
 
-def _coerce_float(raw: str, opcode: str, idx: int = -1) -> float:
-    raw = raw.strip()
-    if not FLOAT_RE.match(raw):
-        pos = f" (arg #{idx})" if idx >= 0 else ""
-        raise SemanticError(
-            f"'{opcode}'{pos}: expected float (with explicit decimal point), "
-            f"got {raw!r} (spec §3.4)"
-        )
-    return float(raw)
+
 
 
 def _validate_modifiers(

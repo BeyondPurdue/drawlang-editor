@@ -32,8 +32,8 @@ from drawlang.backends.ps import PostScriptBackend
 
 
 def test_spec_version():
-    """The interpreter targets spec v0.2."""
-    assert SPEC_VERSION == "0.2"
+    """The interpreter targets spec v0.3."""
+    assert SPEC_VERSION == "0.3"
 
 
 # ---------------------------------------------------------------------------
@@ -85,15 +85,22 @@ class TestNumbers:
         stmts = parse("ma,0,0;")
         assert stmts[0].args == [0, 0]
 
-    def test_float_requires_decimal_point(self):
-        """Spec §3.4: float args must have an explicit decimal point."""
-        # Valid — `tx` first arg is a float
-        parse("tx,0.,Hello;")
-        parse("tx,90.0,World;")
-        parse("tx,-.5,X;")
-        # Invalid — no decimal point
-        with pytest.raises(SemanticError, match="expected float"):
-            parse("tx,90,X;")
+    def test_v03_numeric_accepts_int_and_decimal(self):
+        """Spec §3.4 (v0.3): one numeric type, INT. Decimal-point literals
+        are accepted and rounded half-toward-positive-infinity."""
+        # Bare ints work (this is what real ES680 data uses)
+        assert parse("tx,0,Hello;")[0].args == [0, "Hello"]
+        assert parse("tx,90,V;")[0].args == [90, "V"]
+        assert parse("tx,-90,V;")[0].args == [-90, "V"]
+        # Trailing-dot ints work (v0.2 canonical form)
+        assert parse("tx,0.,Hello;")[0].args == [0, "Hello"]
+        assert parse("tx,90.0,V;")[0].args == [90, "V"]
+        # Fractions get rounded
+        assert parse("tx,3.14,X;")[0].args == [3, "X"]
+        assert parse("tx,-.5,X;")[0].args == [0, "X"]  # -0.5 rounds toward +∞
+        # Non-numeric is still rejected
+        with pytest.raises(SemanticError, match="expected numeric"):
+            parse("tx,abc,X;")
 
     def test_integer_range_i2(self):
         """Spec §4.3: default integer range is int16 [-32768, 32767]."""

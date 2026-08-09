@@ -21,7 +21,7 @@ from drawlang.errors import LexicalError
 
 
 def test_spec_version_is_02():
-    assert SPEC_VERSION == "0.2"
+    assert SPEC_VERSION == "0.3"
 
 
 class TestBasicComments:
