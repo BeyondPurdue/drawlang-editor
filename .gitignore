@@ -44,6 +44,14 @@ htmlcov/
 editor/user_drawings/*
 !editor/user_drawings/.gitkeep
 
+# SQLite database and WAL files (user drawings live in the DB — never commit)
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
 # Rendered outputs (they should be regenerated)
 *.pdf
 !spec/**/*.pdf

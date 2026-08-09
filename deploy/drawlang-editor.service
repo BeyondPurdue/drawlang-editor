@@ -1,0 +1,37 @@
+[Unit]
+Description=Drawing Language Editor (FastAPI + uvicorn)
+Documentation=https://github.com/BeyondPurdue/drawlang-editor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/drawlang-editor/editor
+Environment=PYTHONUNBUFFERED=1
+Environment=DRAWLANG_DB_PATH=/var/www/drawlang-editor/data/drawings.db
+
+# 4 uvicorn workers → 4 concurrent Python processes.
+# On a Hetzner CX22 (2 vCPU / 4 GB) this uses ~600 MB RAM and comfortably
+# handles ~50 concurrent editors; bump to 6-8 workers on CX32 later.
+ExecStart=/var/www/drawlang-editor/venv/bin/uvicorn \
+    app.main:app \
+    --host 127.0.0.1 \
+    --port 8765 \
+    --workers 4 \
+    --access-log \
+    --log-level info
+
+Restart=on-failure
+RestartSec=3s
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/www/drawlang-editor/data
+
+[Install]
+WantedBy=multi-user.target

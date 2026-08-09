@@ -1,0 +1,14 @@
+[Unit]
+Description=Trigger Drawing Language Editor deploy every 2 minutes
+Documentation=https://github.com/BeyondPurdue/drawlang-editor
+
+[Timer]
+# First run 30 seconds after boot, then every 2 minutes thereafter.
+# This matches the SecureDCS bmg-kb-deploy pattern.
+OnBootSec=30s
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=drawlang-deploy.service
+
+[Install]
+WantedBy=timers.target

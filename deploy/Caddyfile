@@ -1,0 +1,55 @@
+# /etc/caddy/Caddyfile
+# Drawing Language Editor — production reverse proxy config.
+#
+# Copied from /var/www/drawlang-editor/deploy/Caddyfile at bootstrap time.
+# To update after editing this file:
+#   sudo cp /var/www/drawlang-editor/deploy/Caddyfile /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+
+editor.beyondpurdue.com {
+    # Automatic HTTPS via Let's Encrypt (Caddy handles the ACME dance)
+    encode gzip zstd
+
+    # Standard security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "SAMEORIGIN"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        # Simple CSP — tighten once we add third-party assets
+        Content-Security-Policy   "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self'"
+        -Server
+    }
+
+    # Reverse-proxy all requests to the uvicorn service on loopback
+    reverse_proxy 127.0.0.1:8765 {
+        # Reasonable timeouts for the /export/pdf endpoint (Ghostscript can
+        # take a couple of seconds on complex drawings).
+        transport http {
+            read_timeout      30s
+            write_timeout     30s
+            dial_timeout      5s
+        }
+        header_up X-Real-IP        {remote_host}
+        header_up X-Forwarded-For  {remote_host}
+        header_up X-Forwarded-Host {host}
+    }
+
+    # Rate-limit /export/pdf later if abuse becomes an issue — Caddy
+    # rate_limit plugin or a small FastAPI middleware. For now, none.
+
+    log {
+        output file /var/log/caddy/editor.beyondpurdue.com.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+        format json
+    }
+}
+
+# If someone probes the server by raw IP address (or an unrelated hostname
+# resolves here), return 404 instead of the editor page. Named sites above
+# take precedence for the correct hostname.
+http:// {
+    respond "Not found" 404
+}

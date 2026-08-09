@@ -33,6 +33,7 @@ from drawlang import SPEC_VERSION, render  # noqa: E402
 from drawlang.errors import DrawLangError  # noqa: E402
 
 from app.import_library import load_templates, build_catalog  # noqa: E402
+from app import storage  # noqa: E402
 
 
 app = FastAPI(title="Drawing Language Editor", version=SPEC_VERSION)
@@ -42,6 +43,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def _init_storage() -> None:
+    storage.init()
+    # Sweep any pre-DB filesystem drawings into the DB, once.
+    legacy = Path(__file__).resolve().parent.parent / "user_drawings"
+    imported = storage.import_legacy_files(legacy)
+    if imported:
+        print(f"[storage] imported {imported} legacy drawing(s) from {legacy}")
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -142,10 +153,6 @@ def reference() -> JSONResponse:
 # ---------------------------------------------------------------------------
 
 
-USER_DRAWINGS_DIR = Path(__file__).resolve().parent.parent / "user_drawings"
-USER_DRAWINGS_DIR.mkdir(exist_ok=True)
-
-
 class SaveRequest(BaseModel):
     name: str
     program: str
@@ -155,40 +162,30 @@ class SaveRequest(BaseModel):
 @app.post("/save")
 def save_drawing(req: SaveRequest) -> JSONResponse:
     """
-    Persist an edited program as a .cmd file under user_drawings/.
+    Persist an edited program as a database row.
 
-    Name is slugified for the filename. The saved file is a plain
-    drawlang program with a small header comment recording the source
-    template (if any). This is the user's own drawing and belongs to
-    them — the library templates remain read-only.
+    Name is slugified into a stable id; re-saving the same name updates
+    the existing row. The library templates remain read-only; user rows
+    live in the `drawings` table.
     """
-    import re
-    slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", req.name.strip()) or "drawing"
-    if not slug.endswith(".cmd"):
-        slug += ".cmd"
-    path = USER_DRAWINGS_DIR / slug
-    header = ["# User drawing (Beyond Purdue Editor)"]
-    if req.source_id:
-        header.append(f"# Forked from: {req.source_id}")
-    header.append(f"# Saved as: {slug}")
-    header.append("")
-    path.write_text("\n".join(header) + req.program, encoding="utf-8")
-    return JSONResponse({"ok": True, "path": str(path.name), "slug": slug})
+    result = storage.save_drawing(
+        name=req.name,
+        program=req.program,
+        source_id=req.source_id,
+    )
+    return JSONResponse(result)
 
 
 @app.get("/drawings")
 def list_drawings() -> JSONResponse:
-    """List all saved user drawings."""
-    items = []
-    for p in sorted(USER_DRAWINGS_DIR.glob("*.cmd")):
-        items.append({
-            "id": f"user-{p.stem}",
-            "title": p.stem,
-            "category": "My drawings",
-            "program": p.read_text(encoding="utf-8"),
-            "description": f"User drawing saved as {p.name}.",
-        })
-    return JSONResponse(items)
+    """List all saved user drawings from the database."""
+    return JSONResponse(storage.list_drawings())
+
+
+@app.delete("/drawings/{slug}")
+def delete_drawing(slug: str) -> JSONResponse:
+    deleted = storage.delete_drawing(slug)
+    return JSONResponse({"ok": deleted, "slug": slug})
 
 
 # ---------------------------------------------------------------------------
