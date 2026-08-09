@@ -193,10 +193,20 @@ class SVGBackend:
         # transform on the root <g>. Then everything inside is in language
         # coordinates.
         body = "\n  ".join(self._body_parts)
+        # Emit the SVG at its natural ES680 pixel size (1 language unit = 1
+        # CSS pixel). This matches how ES680 itself rendered drawings on a
+        # ~1024x900 workstation display: frames are exactly frame-sized, text
+        # and line weights are legible, small detail templates fit normally.
+        # Large templates (11000+ px picex sheets) will overflow the viewport;
+        # the preview UI provides pan+zoom around them, again matching ES680.
+        # data-content-width / data-content-height duplicate the size so a
+        # zoom controller can read them without parsing the viewBox.
         return (
             f'<svg xmlns="http://www.w3.org/2000/svg" '
             f'viewBox="{vb_x} {-(vb_y + vb_h)} {vb_w} {vb_h}" '
-            f'width="{vb_w}" height="{vb_h}">\n'
+            f'width="{vb_w}" height="{vb_h}" '
+            f'preserveAspectRatio="xMidYMid meet" '
+            f'data-content-width="{vb_w}" data-content-height="{vb_h}">\n'
             f'  <g transform="scale(1 -1)">\n'
             f'    {body}\n'
             f'  </g>\n'

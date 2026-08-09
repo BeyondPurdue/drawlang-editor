@@ -41,6 +41,7 @@ async function renderProgram({ silent = false } = {}) {
 
     if (data.ok) {
       preview.innerHTML = data.output;
+      onPreviewSvgChanged();
       const stmtCount = countStatements(program);
       setStatus("ok", `OK · ${stmtCount} statement${stmtCount === 1 ? "" : "s"}`);
     } else {
@@ -313,6 +314,125 @@ $("example-search").addEventListener("input", (e) => {
   searchQuery = e.target.value;
   renderExampleList();
 });
+
+// ---------------------------------------------------------------------------
+// Preview pan + zoom (native 1:1 by default, ES680-style)
+//   scale  = CSS transform scale factor (1.0 = 1 unit ↔ 1 CSS px)
+//   tx, ty = translation in CSS px (top-left corner offset)
+//   Content coord (cx, cy) maps to screen (cx*scale + tx, cy*scale + ty).
+//   To zoom around a screen point (sx, sy) at new scale s2:
+//     tx' = sx - (sx - tx) * s2/scale
+//     ty' = sy - (sy - ty) * s2/scale
+// ---------------------------------------------------------------------------
+
+const view = { scale: 1, tx: 0, ty: 0 };
+const MIN_SCALE = 0.02;
+const MAX_SCALE = 8;
+const zoomLevel = $("zoom-level");
+
+function currentSvg() { return preview.querySelector("svg"); }
+
+function contentSize(svg) {
+  const w = parseFloat(svg.getAttribute("data-content-width") || svg.getAttribute("width") || 0);
+  const h = parseFloat(svg.getAttribute("data-content-height") || svg.getAttribute("height") || 0);
+  return { w, h };
+}
+
+function applyView() {
+  const svg = currentSvg();
+  if (!svg) return;
+  svg.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`;
+  zoomLevel.textContent = Math.round(view.scale * 100) + "%";
+}
+
+function setZoomAround(newScale, sx, sy) {
+  newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+  // Origin-relative screen point (sx, sy is relative to preview canvas top-left)
+  view.tx = sx - (sx - view.tx) * (newScale / view.scale);
+  view.ty = sy - (sy - view.ty) * (newScale / view.scale);
+  view.scale = newScale;
+  applyView();
+}
+
+function fitToContainer() {
+  const svg = currentSvg();
+  if (!svg) return;
+  const { w, h } = contentSize(svg);
+  if (!w || !h) return;
+  const cw = preview.clientWidth, ch = preview.clientHeight;
+  const pad = 24;
+  const s = Math.min((cw - pad) / w, (ch - pad) / h, 1);
+  view.scale = Math.max(MIN_SCALE, s);
+  view.tx = (cw - w * view.scale) / 2;
+  view.ty = (ch - h * view.scale) / 2;
+  applyView();
+}
+
+function resetOneToOne() {
+  const svg = currentSvg();
+  if (!svg) return;
+  const { w, h } = contentSize(svg);
+  const cw = preview.clientWidth, ch = preview.clientHeight;
+  view.scale = 1;
+  // Center if it fits, otherwise anchor top-left with a small margin
+  view.tx = w <= cw ? (cw - w) / 2 : 12;
+  view.ty = h <= ch ? (ch - h) / 2 : 12;
+  applyView();
+}
+
+// Called whenever preview.innerHTML has been replaced with a new SVG.
+// Native 1:1 for anything that fits (≤ container). Auto-fit for oversized.
+function onPreviewSvgChanged() {
+  const svg = currentSvg();
+  if (!svg) return;
+  const { w, h } = contentSize(svg);
+  const cw = preview.clientWidth, ch = preview.clientHeight;
+  if (w > cw || h > ch) fitToContainer();
+  else resetOneToOne();
+}
+
+// --- Pan (mouse drag) ---
+let dragging = null;
+preview.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  if (!currentSvg()) return;
+  dragging = { sx: e.clientX, sy: e.clientY, tx0: view.tx, ty0: view.ty };
+  preview.classList.add("dragging");
+  e.preventDefault();
+});
+window.addEventListener("mousemove", (e) => {
+  if (!dragging) return;
+  view.tx = dragging.tx0 + (e.clientX - dragging.sx);
+  view.ty = dragging.ty0 + (e.clientY - dragging.sy);
+  applyView();
+});
+window.addEventListener("mouseup", () => {
+  if (!dragging) return;
+  dragging = null;
+  preview.classList.remove("dragging");
+});
+
+// --- Zoom (Ctrl+wheel, plain wheel scrolls to zoom in/out too, matching CAD apps) ---
+preview.addEventListener("wheel", (e) => {
+  if (!currentSvg()) return;
+  if (!e.ctrlKey && !e.metaKey) return; // require modifier so page scroll still works
+  e.preventDefault();
+  const rect = preview.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  setZoomAround(view.scale * factor, sx, sy);
+}, { passive: false });
+
+// --- Buttons ---
+function centerZoom(factor) {
+  const rect = preview.getBoundingClientRect();
+  setZoomAround(view.scale * factor, rect.width / 2, rect.height / 2);
+}
+$("zoom-in").addEventListener("click", () => centerZoom(1.25));
+$("zoom-out").addEventListener("click", () => centerZoom(1 / 1.25));
+$("zoom-one").addEventListener("click", resetOneToOne);
+$("zoom-fit").addEventListener("click", fitToContainer);
 
 // Init
 loadReference();

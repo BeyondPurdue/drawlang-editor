@@ -75,6 +75,14 @@
       <div class="pane-header">
         <span class="pane-title">Preview</span>
         <span class="pane-hint">SVG · rendered by drawlang</span>
+        <span class="pane-spacer"></span>
+        <div class="zoom-toolbar" role="toolbar" aria-label="Zoom">
+          <button class="zbtn" id="zoom-out" title="Zoom out (Ctrl+− or Ctrl+wheel)">−</button>
+          <span class="zoom-level" id="zoom-level" title="Current zoom">100%</span>
+          <button class="zbtn" id="zoom-in" title="Zoom in (Ctrl++ or Ctrl+wheel)">+</button>
+          <button class="zbtn" id="zoom-one" title="Native size (1:1)">1:1</button>
+          <button class="zbtn" id="zoom-fit" title="Fit drawing to preview">Fit</button>
+        </div>
       </div>
       <div class="preview-canvas" id="preview">
         <div class="preview-empty">Write a program on the left, or pick an example.</div>

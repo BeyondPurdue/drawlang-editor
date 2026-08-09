@@ -246,12 +246,31 @@ html, body {
   padding: 8px 14px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  display: flex; align-items: baseline; gap: 12px;
+  display: flex; align-items: center; gap: 12px;
   height: 34px;
   flex-shrink: 0;
 }
 .pane-title { font-size: 12px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: 0.06em; }
 .pane-hint { font-size: 11px; color: var(--text-faint); font-family: var(--mono); }
+.pane-spacer { flex: 1; }
+
+.zoom-toolbar {
+  display: flex; align-items: center; gap: 4px;
+  font-family: var(--mono); font-size: 11px;
+}
+.zbtn {
+  background: var(--bg); color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 3px;
+  padding: 2px 8px; min-width: 24px; height: 22px;
+  font-family: var(--mono); font-size: 11px; line-height: 1;
+  cursor: pointer; user-select: none;
+}
+.zbtn:hover { background: var(--surface-alt); color: var(--text); border-color: var(--border-strong); }
+.zbtn:active { transform: translateY(1px); }
+.zoom-level {
+  color: var(--text-muted); min-width: 46px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 
 #editor {
   flex: 1;
@@ -298,25 +317,32 @@ html, body {
 }
 .preview-canvas {
   flex: 1;
-  padding: 20px;
-  overflow: auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
+  overflow: hidden;      /* pan/zoom controlled by JS, not native scroll */
   background:
     linear-gradient(var(--surface-alt), var(--surface-alt)),
     repeating-linear-gradient(0deg, transparent 0 19px, rgba(255,255,255,0.02) 19px 20px),
     repeating-linear-gradient(90deg, transparent 0 19px, rgba(255,255,255,0.02) 19px 20px);
   background-blend-mode: normal, normal, normal;
+  cursor: grab;
+  user-select: none;
 }
+.preview-canvas.dragging { cursor: grabbing; }
 .preview-canvas svg {
+  /* Rendered at ES680 native size (1 unit = 1px). Pan/zoom transforms
+     are applied by JS via CSS transform. The container clips overflow. */
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
   background: #fafaf7;      /* paper */
-  max-width: 100%;
-  max-height: 100%;
   box-shadow: 0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px var(--border);
   border-radius: 2px;
+  display: block;
 }
 .preview-empty {
+  position: absolute;
+  inset: 0;
+  display: flex; align-items: center; justify-content: center;
   color: var(--text-faint);
   font-size: 13px;
   font-style: italic;
