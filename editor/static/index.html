@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Drawing Language Editor — v0.1</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">◈</span>
+      <div class="brand-text">
+        <div class="brand-title">Drawing Language Editor</div>
+        <div class="brand-sub">spec v<span id="spec-version">0.1</span> · LOCKED</div>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <label class="chk">
+        <input type="checkbox" id="autorender" checked>
+        <span>Auto-render</span>
+      </label>
+      <button class="btn" id="render-btn" title="Ctrl/Cmd+Enter">Render</button>
+      <button class="btn" id="save-btn" title="Save as user drawing">Save</button>
+      <button class="btn ghost" id="export-svg">Export SVG</button>
+      <button class="btn ghost" id="export-pdf">Export PDF</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="sidebar">
+      <section class="panel">
+        <h2 class="panel-title">
+          Library
+          <span class="panel-count" id="example-count">—</span>
+        </h2>
+        <div class="filter-row">
+          <input type="search" id="example-search" placeholder="Filter by name…" autocomplete="off">
+        </div>
+        <div class="filter-tags" id="filter-tags"></div>
+        <ul class="example-list" id="example-list"></ul>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">Reference</h2>
+        <div class="ref-group">
+          <h3 class="ref-heading">Core opcodes</h3>
+          <ul class="ref-list" id="ref-core"></ul>
+        </div>
+        <div class="ref-group">
+          <h3 class="ref-heading">Extensions</h3>
+          <ul class="ref-list" id="ref-ext"></ul>
+        </div>
+        <div class="ref-group">
+          <h3 class="ref-heading">Modifiers</h3>
+          <ul class="ref-list" id="ref-mods"></ul>
+        </div>
+        <div class="ref-footer" id="ref-footer"></div>
+      </section>
+    </aside>
+
+    <section class="editor-pane">
+      <div class="pane-header">
+        <span class="pane-title">Program</span>
+        <span class="pane-hint">cmd source · ASCII · statements end with ;</span>
+      </div>
+      <textarea id="editor" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
+      <div class="status-bar" id="status-bar">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Ready</span>
+      </div>
+    </section>
+
+    <section class="preview-pane">
+      <div class="pane-header">
+        <span class="pane-title">Preview</span>
+        <span class="pane-hint">SVG · rendered by drawlang</span>
+      </div>
+      <div class="preview-canvas" id="preview">
+        <div class="preview-empty">Write a program on the left, or pick an example.</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
