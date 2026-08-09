@@ -381,7 +381,12 @@ function resetOneToOne() {
 }
 
 // Called whenever preview.innerHTML has been replaced with a new SVG.
-// Native 1:1 for anything that fits (≤ container). Auto-fit for oversized.
+// - Small drawing (fits): show at native 1:1, centered.
+// - Large drawing (bigger than pane): fit-to-container so the whole sheet
+//   is visible. This works because the SVG uses non-scaling-stroke, so
+//   1-px lines stay 1 CSS px wide even at 2% zoom — the drawing stays
+//   legible instead of collapsing to a black smudge.
+// User can always click 1:1 or use Ctrl+wheel to zoom in.
 function onPreviewSvgChanged() {
   const svg = currentSvg();
   if (!svg) return;

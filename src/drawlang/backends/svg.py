@@ -201,12 +201,26 @@ class SVGBackend:
         # the preview UI provides pan+zoom around them, again matching ES680.
         # data-content-width / data-content-height duplicate the size so a
         # zoom controller can read them without parsing the viewBox.
+        # vector-effect="non-scaling-stroke" on the outer g forces every child
+        # stroke to render at its authored pixel width regardless of any
+        # CSS transform scale that the preview applies. This is what makes
+        # a huge picex sheet (11000+ px) legible when zoomed out: 1-px lines
+        # stay 1 CSS px, tick marks stay visible, text stays crisp. It has
+        # no effect at 1:1 zoom, and it matches ES680's own cosmetic-line
+        # behaviour on lower-resolution displays.
+        # Embedded stylesheet forces every stroked primitive to use
+        # vector-effect:non-scaling-stroke, so lines stay 1 CSS px wide at
+        # every zoom level. non-scaling-stroke is not inherited via SVG
+        # attributes, so an in-document <style> rule is the cleanest way
+        # to apply it uniformly without touching per-primitive emitters.
         return (
             f'<svg xmlns="http://www.w3.org/2000/svg" '
             f'viewBox="{vb_x} {-(vb_y + vb_h)} {vb_w} {vb_h}" '
             f'width="{vb_w}" height="{vb_h}" '
             f'preserveAspectRatio="xMidYMid meet" '
             f'data-content-width="{vb_w}" data-content-height="{vb_h}">\n'
+            f'  <style>line,rect,path,polyline,polygon,circle,ellipse'
+            f'{{vector-effect:non-scaling-stroke}}</style>\n'
             f'  <g transform="scale(1 -1)">\n'
             f'    {body}\n'
             f'  </g>\n'
