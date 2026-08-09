@@ -14,7 +14,10 @@ Key design notes tied to the spec:
   This means we cannot generically split arguments by `,` for every opcode —
   `tx` is special because its second argument is a string and MAY contain
   commas.
-- Spec §3.5: no comments in the language.
+- Spec §3.5 (v0.2): `#` starts a line comment that continues to end-of-line and
+  is stripped before tokenization. A `#` inside a `tx` string argument is
+  literal text (because tx strings extend from a comma to the next `;`, not
+  to a newline).
 - Spec §3.6: opcodes and modifiers are lowercase; any uppercase form is a
   LexicalError.
 - Spec §6-§7: each opcode has a fixed positional-argument signature; modifiers
@@ -120,6 +123,9 @@ def parse(program_text: str) -> list[Statement]:
     Raises SemanticError for signature violations (wrong argument count,
     wrong argument type, modifier not accepted by opcode, out-of-range value).
     """
+    # v0.2: strip line comments before any other lexical work. This must be
+    # done comment-aware for `tx` string arguments (see _strip_comments below).
+    program_text = _strip_comments(program_text)
     statements: list[Statement] = []
     for i, raw in enumerate(_split_statements(program_text)):
         if not raw.strip():
@@ -144,6 +150,101 @@ def parse(program_text: str) -> list[Statement]:
 
 def _split_statements(program_text: str) -> list[str]:
     return program_text.split(";")
+
+
+# ---------------------------------------------------------------------------
+# Comment stripping (spec §3.5, v0.2)
+#
+# A `#` outside a `tx` string starts a comment that continues to (but does
+# not include) the next line terminator. `tx` string arguments are the only
+# place where `#` is literal text; because `tx` strings extend from the last
+# comma of the `tx` statement to the next `;` (spec §3.4, §6.7), we can
+# safely walk the input tracking a small "in tx tail" state.
+#
+# The rule, precisely:
+#   - Scan left to right.
+#   - Maintain `in_tx_tail`: True from the position just after the second
+#     comma of a `tx` statement, until the next `;`.
+#   - When `in_tx_tail` is False, encountering `#` starts a comment; all
+#     characters up to (not including) the next '\n' are dropped.
+#   - When `in_tx_tail` is True, `#` is literal.
+#   - Newlines are preserved so statement indices in error messages remain
+#     stable and human-readable.
+# ---------------------------------------------------------------------------
+
+
+def _strip_comments(text: str) -> str:
+    out: list[str] = []
+    i, n = 0, len(text)
+    in_tx_tail = False
+    while i < n:
+        ch = text[i]
+
+        if in_tx_tail:
+            # Inside a tx string tail: everything is literal until ';'
+            out.append(ch)
+            if ch == ";":
+                in_tx_tail = False
+            i += 1
+            continue
+
+        if ch == "#":
+            # Skip to end-of-line (but keep the newline for indexing)
+            while i < n and text[i] != "\n":
+                i += 1
+            continue  # do NOT append; the newline (if any) will be handled next iteration
+
+        # Detect the start of a tx string tail. `tx` takes (float, string);
+        # the string tail begins after the comma that follows the float arg.
+        # Cheapest correct detector: look for the two-letter opcode 'tx' at a
+        # statement boundary, then find the second comma, then flip the flag.
+        if (
+            ch == "t"
+            and i + 1 < n
+            and text[i + 1] == "x"
+            and _is_statement_boundary(text, i)
+        ):
+            # Copy 'tx' and then scan forward for the 2nd comma or ';'.
+            out.append(text[i])
+            out.append(text[i + 1])
+            j = i + 2
+            commas_seen = 0
+            while j < n:
+                cj = text[j]
+                out.append(cj)
+                if cj == ";":
+                    # Malformed tx (no string arg) — let the parser complain later
+                    break
+                if cj == ",":
+                    commas_seen += 1
+                    if commas_seen == 2:
+                        # Everything after this comma, up to next ';', is literal
+                        j += 1
+                        in_tx_tail = True
+                        break
+                j += 1
+            i = j
+            continue
+
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _is_statement_boundary(text: str, pos: int) -> bool:
+    """True if `pos` is at the start of a statement (only whitespace or ';'
+    since the last statement terminator or the beginning of input)."""
+    k = pos - 1
+    while k >= 0:
+        c = text[k]
+        if c == ";" or c == "\n":
+            return True
+        if c in " \t\r":
+            k -= 1
+            continue
+        # Any other character means we're inside a statement or its arguments
+        return False
+    return True  # start of input
 
 
 # ---------------------------------------------------------------------------

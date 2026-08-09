@@ -32,8 +32,8 @@ from .parser import parse, Statement
 from .interpreter import interpret, PenState
 from .backend import Backend
 
-__version__ = "0.1.0"
-SPEC_VERSION = "0.1"
+__version__ = "0.2.0"
+SPEC_VERSION = "0.2"
 
 
 def render(program_text: str, backend: str = "svg", **backend_options):

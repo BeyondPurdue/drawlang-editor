@@ -1,5 +1,5 @@
 """
-Conformance test suite for the Drawing Language v0.1 interpreter.
+Conformance test suite for the Drawing Language v0.2 interpreter.
 
 Every test is tagged with the spec section it verifies. If a test fails,
 either the interpreter is non-conforming (fix the code) or the spec has
@@ -32,8 +32,8 @@ from drawlang.backends.ps import PostScriptBackend
 
 
 def test_spec_version():
-    """The interpreter targets spec v0.1."""
-    assert SPEC_VERSION == "0.1"
+    """The interpreter targets spec v0.2."""
+    assert SPEC_VERSION == "0.2"
 
 
 # ---------------------------------------------------------------------------
