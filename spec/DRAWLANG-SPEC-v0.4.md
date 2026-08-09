@@ -2,9 +2,7 @@
 
 **Project:** ES680 Drawing System — Universal Vector Drawing Editor
 **Owner:** BM Global
-**Document status:** LOCKED v0.5 — frozen 2026-08-09. Any change requires a new version (v0.6).
-
-**Change from v0.4 → v0.5:** the `ci` and `rt` opcodes now accept the `t` modifier. This is a **reserved-semantics** modifier: parsers MUST accept `,t` on `ci` and `rt`, interpreters MUST NOT reject it, and the reference backend MUST render the shape identically to the same statement without `,t`. A future spec revision may attach visible semantics to `,t` once the ES680 source documentation is cross-referenced. This is an additive, backward-compatible change — every v0.4 program remains a valid v0.5 program. Rationale: the real ES680 pic_ex library uses `,t` on `ci` (42 occurrences) and `rt` (35 occurrences), and rejecting these programs makes real plans un-renderable (e.g. HHY01D plan 1580 statement #1898). Accepting the modifier as a reserved no-op unblocks rendering without committing the spec to a guessed semantics.
+**Document status:** LOCKED v0.4 — frozen 2026-08-09. Any change requires a new version (v0.5).
 
 **Change from v0.3 → v0.4:** the `dl` opcode now accepts the `i` (invisible) modifier, matching the pattern already established by `rt`. An invisible line advances the pen from its current position to the endpoint `(x+dx, y+dy)` and contributes both endpoints to the bounding-box accumulator, but emits no visible mark. This is an additive, backward-compatible change — every v0.3 program remains a valid v0.4 program. Rationale: real ES680 pic_ex programs use `dl,dx,dy,i` extensively (≈10% of the imported pic_ex library, 138 occurrences in a single 548-placement plan) to reserve symbol bounding-box extents without visible strokes. The v0.3 spec unnecessarily rejected these programs; conceptually `i` on `dl` behaves exactly as `i` on `rt`.
 
@@ -315,7 +313,7 @@ Reserves a 24×25 bounding box then walks an invisible L-path to extend the exte
 
 ### 6.4 `rt` — rectangle
 
-**Syntax:** `rt,w,h[,f][,i][,t]`
+**Syntax:** `rt,w,h[,f][,i]`
 
 **Arguments:**
 
@@ -324,7 +322,7 @@ Reserves a 24×25 bounding box then walks an invisible L-path to extend the exte
 | 1 | w | integer | Width. May be negative (extends leftward). |
 | 2 | h | integer | Height. May be negative (extends downward). |
 
-**Modifiers accepted:** `,f` (fill), `,i` (invisible / atmend boundary), `,t` (reserved, v0.5). See §8.
+**Modifiers accepted:** `,f` (fill), `,i` (invisible / atmend boundary). See §8.
 
 **Semantics:** Draws an axis-aligned rectangle with one corner at the current pen position and the opposite corner at `(current_x + w, current_y + h)`. When `,f` is present, the rectangle is filled with the current stroke color; when absent, only the outline is stroked. When `,i` is present, the rectangle contributes to bounding-box calculation but is not rendered — used to define invisible boundary segments in **atmende** (breathing/expandable) blocks. `,i` and `,f` MAY appear together in either order.
 
@@ -345,7 +343,7 @@ Draws the same rectangle, filled.
 
 ### 6.5 `ci` — circle
 
-**Syntax:** `ci,r[,f][,t]`
+**Syntax:** `ci,r[,f]`
 
 **Arguments:**
 
@@ -353,7 +351,7 @@ Draws the same rectangle, filled.
 |---|---|---|---|
 | 1 | r | integer | Radius. Must be positive. |
 
-**Modifiers accepted:** `,f` (fill), `,t` (reserved, v0.5). See §8.
+**Modifiers accepted:** `,f` (fill). See §8.
 
 **Semantics:** Draws a full 360° circle centered at the current pen position, with radius `r`. When `,f` is present, the disk is filled; when absent, only the outline is stroked.
 
@@ -566,7 +564,6 @@ Modifiers are single-letter suffixes (optionally followed by digits) that modify
 |---|---|---|---|
 | `,f` | Fill | `rt`, `ci`, `ar`, `sp` | Fills the closed shape with the current stroke color. Not applicable to open paths (`dl`, `bz`). |
 | `,i` | Invisible / atmend boundary | `rt`, `dl` (v0.4) | Marks the geometry as contributing to bounding-box computation but not rendered. Used to define expandable-block boundaries and to reserve symbol extent without visible strokes. For `dl`, the pen still advances to the endpoint. |
-| `,t` | Reserved (v0.5) | `ci`, `rt` (v0.5) | Reserved-semantics modifier. Parsers MUST accept it. Interpreters MUST NOT reject it. The reference backend MUST render the shape identically to the same statement without `,t`. A future spec revision may attach visible semantics; until then, `,t` is a no-op that only exists so real ES680 pic_ex programs parse. |
 | `,d` | Dashed stroke | `dl`, `rt`, `ci`, `ar`, `bz`, `sp` | Renders the stroke as a dashed line. The dash pattern is defined by the backend (typically 4-on-4-off in drawing units). |
 | `,c`*n* | Color palette index | Any drawing opcode | Selects color number *n* from the drawing's palette table. `n` is a non-negative integer written immediately after `c`, e.g. `,c0`, `,c1`, `,c15`. The mapping from `n` to an RGB value is stored in a separate `palette` table, not in the cmd string. Palette index 0 is always "default stroke color" (typically black). |
 
@@ -837,11 +834,10 @@ This specification is versioned. Version numbers follow **major.minor** semantic
 - **Major version** increments when a change is made that breaks conformance of previously-conforming programs or interpreters. Examples: removing an opcode, changing the meaning of an existing opcode, changing the coordinate system.
 - **Minor version** increments when a change is additive: new Extension opcodes, new modifiers, clarifications, examples.
 
-Current version: **0.5 (locked, 2026-08-09)**. Approved by the project owner as the frozen reference. All interpreters and programs are built against this version.
+Current version: **0.4 (locked, 2026-08-09)**. Approved by the project owner as the frozen reference. All interpreters and programs are built against this version.
 
 **Version history:**
 
-- **0.5 (2026-08-09).** `ci` and `rt` accept the `t` modifier as a reserved no-op. Parsers must accept; interpreters must not reject; the reference backend renders the shape identically to the same statement without `,t`. Additive; every v0.4 program is a valid v0.5 program. Motivated by real ES680 pic_ex symbols (~77 occurrences in the shipped library) that use `,t` on `ci` and `rt`; rejecting them made real plans (e.g. HHY01D plan 1580) un-renderable.
 - **0.4 (2026-08-09).** `dl` opcode accepts the `i` (invisible) modifier. Semantics: pen still advances, both endpoints contribute to the bounding-box accumulator, but no visible mark is emitted. Additive; every v0.3 program is a valid v0.4 program. Motivated by real ES680 pic_ex programs (≈10% of the imported library) that use invisible line moves to reserve symbol extent without visible strokes.
 - **0.3 (2026-08-09).** FLOAT type removed; the language has one numeric type, INT (signed 16-bit). `tx` and `ar` argument declarations changed from FLOAT to INT. Decimal-point literals are accepted and rounded half-toward-positive-infinity to the nearest integer (§3.4 grace clause). Backward-compatible with every real ES680 program and every v0.1/v0.2 program that used only whole-degree angles.
 - **0.2 (2026-08-09).** Added line-comment syntax to §3.5. Additive; every v0.1 program is a valid v0.2 program.

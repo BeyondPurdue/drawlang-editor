@@ -51,7 +51,7 @@ INT = "int"
 STRING = "string"  # only used by `tx`
 
 # Modifier registry — spec §8
-DEFINED_MODIFIERS = {"f", "i", "d", "c"}  # `c` is a family: c<int>
+DEFINED_MODIFIERS = {"f", "i", "d", "c", "t"}  # `c` is a family: c<int>; `t` reserved (v0.5)
 
 # Opcode signatures: (positional_types, allowed_modifiers, string_tail_arg)
 # string_tail_arg: index of the argument that greedily consumes the rest of
@@ -60,9 +60,9 @@ OPCODE_TABLE: dict[str, dict[str, Any]] = {
     # ---- Core opcodes (spec §6) — FROZEN ----
     "mr": {"args": [INT, INT], "mods": set(), "string_tail": None},
     "ma": {"args": [INT, INT], "mods": set(), "string_tail": None},
-    "dl": {"args": [INT, INT], "mods": {"d", "c"}, "string_tail": None},
-    "rt": {"args": [INT, INT], "mods": {"f", "i", "d", "c"}, "string_tail": None},
-    "ci": {"args": [INT], "mods": {"f", "d", "c"}, "string_tail": None},
+    "dl": {"args": [INT, INT], "mods": {"d", "c", "i"}, "string_tail": None},  # v0.4: added `i`
+    "rt": {"args": [INT, INT], "mods": {"f", "i", "d", "c", "t"}, "string_tail": None},  # v0.5: added `t`
+    "ci": {"args": [INT], "mods": {"f", "d", "c", "t"}, "string_tail": None},  # v0.5: added `t`
     "tz": {"args": [INT], "mods": set(), "string_tail": None},
     "tx": {"args": [INT, STRING], "mods": {"c"}, "string_tail": 1},
     # ---- Extension opcodes (spec §7) — ADDITIVE ----
@@ -514,7 +514,7 @@ def _validate_modifiers(
         else:
             raise LexicalError(
                 f"unknown modifier {raw!r}. Defined modifiers: "
-                f"f, i, d, c<n> (spec §8.1)"
+                f"f, i, d, c<n>, t (spec §8.1)"
             )
         if name not in allowed:
             raise SemanticError(

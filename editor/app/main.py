@@ -32,7 +32,11 @@ sys.path.insert(0, str(ROOT / "src"))
 from drawlang import SPEC_VERSION, render  # noqa: E402
 from drawlang.errors import DrawLangError  # noqa: E402
 
-from app.import_library import load_templates, build_catalog  # noqa: E402
+from app.import_library import (  # noqa: E402
+    load_templates,
+    build_catalog,
+    compose_plan_page,
+)
 from app import storage  # noqa: E402
 
 
@@ -301,24 +305,133 @@ EXAMPLES = [
 # ---------------------------------------------------------------------------
 
 
-def _load_library_templates() -> list[dict]:
-    """Load templates from ../library-data/*.csn."""
+def _load_library_data() -> dict:
+    """Load raw parsed library data from ../library-data/*.csn."""
     data_dir = Path(__file__).resolve().parent.parent / "library-data"
     if not data_dir.exists():
-        return []
+        return {}
     try:
-        data = load_templates(data_dir)
-        catalog = build_catalog(data)
-        # Add a description for each
-        for entry in catalog:
-            entry["description"] = f"Imported from library ({entry['source']['table']})."
-        return catalog
+        return load_templates(data_dir)
     except Exception:
-        # Never let a bad backup take the editor down
+        return {}
+
+
+def _library_catalog(data: dict) -> list[dict]:
+    try:
+        catalog = build_catalog(data)
+    except Exception:
         return []
+    for entry in catalog:
+        entry["description"] = f"Imported from library ({entry['source']['table']})."
+    return catalog
 
 
-_LIBRARY_TEMPLATES = _load_library_templates()
+# Load once at startup; used by /examples, /api/plans, /api/plans/{id}.
+_LIBRARY_DATA = _load_library_data()
+_LIBRARY_TEMPLATES = _library_catalog(_LIBRARY_DATA)
+
+# ---------------------------------------------------------------------------
+# Plan (obj_f/obj_g) composition endpoints
+# ---------------------------------------------------------------------------
+
+_PLANS = _LIBRARY_DATA.get("plans", [])
+_PLACEMENTS = _LIBRARY_DATA.get("placements", [])
+_FRAMES_BY_ID = {f["frm_id"]: f for f in _LIBRARY_DATA.get("frames", [])}
+_PIC_EX_BY_ID = {r["pic_id"]: r for r in _LIBRARY_DATA.get("pic_ex", [])}
+_PIC_B_BY_ID = {r["block_id"]: r for r in _LIBRARY_DATA.get("pic_b", [])}
+_RASTERS = _LIBRARY_DATA.get("rasters", [])
+
+# Precompute per-plan placement groups: {plan_id: {se: [placement,...]}}
+_PLAN_PLACEMENTS: dict[int, dict[int, list[dict]]] = {}
+for _pl in _PLACEMENTS:
+    _PLAN_PLACEMENTS.setdefault(_pl["plan_id"], {}).setdefault(_pl["se"], []).append(_pl)
+
+_PLANS_BY_ID = {p["plan_id"]: p for p in _PLANS}
+
+
+def _plan_pages(plan_id: int) -> list[int]:
+    pages = _PLAN_PLACEMENTS.get(plan_id, {})
+    if pages:
+        return sorted(pages.keys())
+    plan = _PLANS_BY_ID.get(plan_id)
+    if plan is None:
+        return []
+    n = max(1, plan.get("max_se", 1))
+    return list(range(1, n + 1))
+
+
+_PLAN_INDEX_CACHE: list[dict] | None = None
+
+
+def _plan_index_entries() -> list[dict]:
+    """Lightweight index entries for the /examples sidebar. Program is a
+    placeholder — the frontend fetches the real composed program via
+    /api/plans/{id}?page=N when the entry is clicked."""
+    global _PLAN_INDEX_CACHE
+    if _PLAN_INDEX_CACHE is not None:
+        return _PLAN_INDEX_CACHE
+    entries = []
+    for plan in _PLANS:
+        pages = _plan_pages(plan["plan_id"])
+        n_symbols = sum(len(v) for v in _PLAN_PLACEMENTS.get(plan["plan_id"], {}).values())
+        for se in pages:
+            page_count = len(_PLAN_PLACEMENTS.get(plan["plan_id"], {}).get(se, []))
+            page_tag = f" p{se}" if len(pages) > 1 else ""
+            entries.append({
+                "id": f"plan-{plan['plan_id']}-{se}",
+                "title": f"{plan['nam']}{page_tag} ({page_count} sym)",
+                "description": (
+                    f"Plan {plan['plan_id']} • uas={plan['uas']} • "
+                    f"frame #{plan['frm_id']} • page {se}/{len(pages)} • "
+                    f"{page_count} of {n_symbols} placements"
+                ),
+                "category": "Plans",
+                "program": f"# Loading plan {plan['nam']} page {se}…",
+                "lazy": True,
+                "plan_id": plan["plan_id"],
+                "page": se,
+                "source": {"table": "obj_f", "plan_id": plan["plan_id"], "page": se},
+            })
+    _PLAN_INDEX_CACHE = entries
+    return entries
+
+
+@app.get("/api/plans")
+def list_plans() -> JSONResponse:
+    """Return a compact list of plan-page entries (id, title, page count)."""
+    return JSONResponse(_plan_index_entries())
+
+
+@app.get("/api/plans/{plan_id}")
+def get_plan(plan_id: int, page: int = 1) -> JSONResponse:
+    """Return the composed drawlang program for one page of a plan."""
+    plan = _PLANS_BY_ID.get(plan_id)
+    if plan is None:
+        raise HTTPException(404, f"plan {plan_id} not found")
+    pages = _PLAN_PLACEMENTS.get(plan_id, {})
+    placements = pages.get(page, [])
+    program = compose_plan_page(
+        plan=plan,
+        placements_on_page=placements,
+        frames_by_id=_FRAMES_BY_ID,
+        pic_ex_by_id=_PIC_EX_BY_ID,
+        pic_b_by_id=_PIC_B_BY_ID,
+        raster_rows=_RASTERS,
+    )
+    return JSONResponse({
+        "plan_id": plan_id,
+        "page": page,
+        "pages": _plan_pages(plan_id),
+        "nam": plan.get("nam"),
+        "frm_id": plan.get("frm_id"),
+        "placement_count": len(placements),
+        "program": program,
+    })
+
+
+# Plans are NOT merged into /examples — they're fetched lazily by the
+# frontend via /api/plans when the user activates the "Plans" category tag.
+# This keeps the /examples payload under ~1 MB even with 17k plan pages.
 _EXAMPLES_MERGED = EXAMPLES + _LIBRARY_TEMPLATES
 
 

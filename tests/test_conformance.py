@@ -32,8 +32,8 @@ from drawlang.backends.ps import PostScriptBackend
 
 
 def test_spec_version():
-    """The interpreter targets spec v0.3."""
-    assert SPEC_VERSION == "0.3"
+    """The interpreter targets spec v0.4."""
+    assert SPEC_VERSION == "0.5"
 
 
 # ---------------------------------------------------------------------------
@@ -242,11 +242,18 @@ class TestModifiers:
         with pytest.raises(SemanticError, match="does not accept"):
             parse("bz,10,10,20,20,30,30,f;")
 
-    def test_invisible_only_on_rt(self):
-        """Spec §8.1: ,i marks a bounding-box-only shape (atmend)."""
+    def test_invisible_modifier_applicability(self):
+        """Spec §8.1 (v0.4): ,i applies to `rt` and `dl`.
+
+        v0.3 restricted ,i to `rt`. v0.4 extends it to `dl` (invisible line
+        that still advances the pen and contributes to the bounding box) to
+        match real ES680 pic_ex usage.
+        """
         parse("rt,10,10,i;")
+        parse("dl,10,10,i;")  # v0.4: no longer raises
+        # ci does not (yet) accept ,i — v0.3 restriction still applies.
         with pytest.raises(SemanticError, match="does not accept"):
-            parse("dl,10,10,i;")
+            parse("ci,5,i;")
 
     def test_dashed_applies_to_strokes(self):
         parse("dl,100,0,d;")

@@ -21,6 +21,8 @@ let activeExample = null;
 let allExamples = [];      // full list from the server (examples + templates)
 let activeCategory = "All";
 let searchQuery = "";
+let plansLoaded = false;   // true once /api/plans has been fetched
+let plansCount = null;     // filled from HEAD or first fetch
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -93,14 +95,34 @@ async function loadExamples() {
   if (combined) loadExample(combined);
 }
 
+async function loadPlansIfNeeded() {
+  if (plansLoaded) return;
+  plansLoaded = true;
+  try {
+    const r = await fetch(api("/api/plans"));
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const plans = await r.json();
+    plansCount = plans.length;
+    // Append plan-index entries to the merged list; renderers will pick them up.
+    allExamples = allExamples.concat(plans);
+    $("example-count").textContent = String(allExamples.length);
+    renderFilterTags();
+    renderExampleList();
+  } catch (err) {
+    plansLoaded = false; // allow retry
+    console.error("loadPlansIfNeeded failed:", err);
+  }
+}
+
 function renderFilterTags() {
-  // Preserve category order by first-seen occurrence
+  // Preserve category order by first-seen occurrence; always include Plans.
   const order = [];
   const seen = new Set();
   for (const e of allExamples) {
     const cat = e.category || "Examples";
     if (!seen.has(cat)) { seen.add(cat); order.push(cat); }
   }
+  if (!seen.has("Plans")) { order.push("Plans"); seen.add("Plans"); }
   const cats = ["All", ...order];
   const wrap = $("filter-tags");
   wrap.innerHTML = "";
@@ -108,14 +130,20 @@ function renderFilterTags() {
     const btn = document.createElement("button");
     btn.className = "tag" + (cat === activeCategory ? " active" : "");
     btn.type = "button";
-    const count = cat === "All"
-      ? allExamples.length
-      : allExamples.filter(e => (e.category || "Examples") === cat).length;
+    let count;
+    if (cat === "All") {
+      count = allExamples.length;
+    } else if (cat === "Plans" && !plansLoaded) {
+      count = "…";
+    } else {
+      count = allExamples.filter(e => (e.category || "Examples") === cat).length;
+    }
     btn.innerHTML = `${escapeHtml(cat)}<span class="tag-count">${count}</span>`;
     btn.addEventListener("click", () => {
       activeCategory = cat;
       renderFilterTags();
       renderExampleList();
+      if (cat === "Plans") loadPlansIfNeeded();
     });
     wrap.appendChild(btn);
   }
@@ -170,12 +198,31 @@ function slugify(s) {
   return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-");
 }
 
-function loadExample(ex) {
-  editor.value = ex.program;
+async function loadExample(ex) {
   activeExample = ex.id;
   document.querySelectorAll(".example-list li").forEach(li => {
     li.classList.toggle("active", li.dataset.exampleId === ex.id);
   });
+  if (ex.lazy && ex.plan_id != null) {
+    // Composed plan program — fetch on demand.
+    editor.value = `# Loading plan ${ex.plan_id} page ${ex.page}…\n`;
+    renderProgram({ silent: true });
+    try {
+      const r = await fetch(api(`/api/plans/${ex.plan_id}?page=${ex.page}`));
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      editor.value = data.program;
+      // Cache on the entry so we do not refetch on re-click.
+      ex.program = data.program;
+      ex.lazy = false;
+    } catch (err) {
+      editor.value =
+        `# Failed to load plan ${ex.plan_id} page ${ex.page}: ${err.message}\n`;
+    }
+    renderProgram();
+    return;
+  }
+  editor.value = ex.program;
   renderProgram();
 }
 

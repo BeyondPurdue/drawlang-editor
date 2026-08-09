@@ -12,7 +12,8 @@ from drawlang.errors import SemanticError
 
 class TestSpecVersion:
     def test_spec_version_is_0_3(self):
-        assert SPEC_VERSION == "0.3"
+        # v0.3 introduced INT-only numerics; v0.4 (current) is additive.
+        assert SPEC_VERSION == "0.5"
 
 
 class TestIntegerAnglesInTx:

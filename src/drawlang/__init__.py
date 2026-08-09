@@ -1,7 +1,7 @@
 """
-drawlang — Reference interpreter for the Drawing Language v0.1.
+drawlang — Reference interpreter for the Drawing Language v0.5.
 
-Implements the language defined in ../../spec/DRAWLANG-SPEC-v0.1.md exactly.
+Implements the language defined in ../../spec/DRAWING-LANGUAGE-SPEC.md exactly.
 
 Package layout — strict separation of concerns:
 
@@ -32,9 +32,19 @@ from .parser import parse, Statement
 from .interpreter import interpret, PenState
 from .backend import Backend
 
-__version__ = "0.3.0"
-SPEC_VERSION = "0.3"
+__version__ = "0.5.0"
+SPEC_VERSION = "0.5"
 # v0.3: FLOAT type removed. All numeric args are INT (signed 16-bit).
+# v0.4: `dl` accepts the `i` (invisible) modifier, matching `rt` and `ci`.
+#        An invisible line advances the pen and contributes both endpoints to
+#        the bounding box but emits no visible mark.
+# v0.5: `ci` and `rt` accept the `t` modifier, observed in real ES680 pic_ex
+#        symbols (~77 occurrences in the shipped library). Semantics are
+#        currently reserved: parsers MUST accept `,t` on ci and rt; interpreters
+#        MUST NOT reject; the reference backend renders the shape identically
+#        to the same statement without `,t`. A future spec revision may attach
+#        visible semantics to `,t` once the ES680 source documentation is
+#        cross-referenced. See spec §8.1 and §14.
 # Literals with a decimal point are accepted and rounded half-toward-positive-
 # infinity to the nearest int. See spec §3.4.
 
