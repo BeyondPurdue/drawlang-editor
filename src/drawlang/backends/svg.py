@@ -14,17 +14,32 @@ from __future__ import annotations
 import html
 import math
 
-# Default palette: index 0 = black; extend as needed. Real projects will
-# override this by passing `palette=...` to the constructor.
+# Default palette (spec v0.6).
+#
+# Palette index 0 is reserved as `paper` — the background / non-color slot.
+# Fills that resolve to index 0 emit `fill="none"` in SVG (invisible fill).
+# This matches the historical Siemens ES680 HMI, where palette entry 0 was
+# the workstation background color, so `rt,W,H,f` with no explicit `,c<n>`
+# drew a rectangle whose fill was the background (visually just the outline).
+#
+# Indices 1..7 are drawing colors. `ink` (index 1) is the default stroke and
+# text color used when no explicit `,c<n>` is supplied. This asymmetry — no
+# color means paper for fill but ink for stroke — is exactly what makes bare
+# `rt,W,H,f` render as an outline rather than a solid black block.
+#
+# Real projects may override the palette via the SVGBackend constructor.
+PAPER_INDEX = 0
+INK_INDEX = 1
 DEFAULT_PALETTE = {
-    0: "#000000",  # default stroke/fill
-    1: "#c62828",  # red
-    2: "#1565c0",  # blue
-    3: "#2e7d32",  # green
-    4: "#f9a825",  # gold
-    5: "#6a1b9a",  # purple
-    6: "#4e342e",  # brown
-    7: "#546e7a",  # slate
+    0: None,        # paper — sentinel for "no color" / background; renders as fill="none"
+    1: "#000000",   # ink — default drawing color (stroke + text)
+    2: "#c62828",   # red
+    3: "#1565c0",   # blue
+    4: "#2e7d32",   # green
+    5: "#f9a825",   # gold
+    6: "#6a1b9a",   # purple
+    7: "#4e342e",   # brown
+    8: "#546e7a",   # slate
 }
 
 
@@ -146,7 +161,9 @@ class SVGBackend:
         self._track_bbox([(x, y), (x + size * max(1, len(text)) * 0.6, y + size)])
         if mods["invisible"]:
             return
-        color = self._resolve_color(mods)
+        # v0.6: text follows the stroke-color rule — default is ink (palette 1),
+        # explicit ,c0 falls back to ink so the text stays visible.
+        color = self._resolve_stroke_color(mods)
         escaped = html.escape(text)
         # Rotate around the pen position. Because we're inside a y-flip <g>,
         # positive angle in language space (CCW) maps to negative angle in
@@ -229,12 +246,41 @@ class SVGBackend:
 
     # -- Internals -----------------------------------------------------------
 
-    def _resolve_color(self, mods) -> str:
-        idx = mods.get("color") or 0
-        return self.palette.get(idx, self.palette[0])
+    def _resolve_stroke_color(self, mods) -> str:
+        """Stroke / text color.
+
+        Spec v0.6: with no explicit `,c<n>`, stroke defaults to `ink`
+        (palette index 1). An explicit `,c<n>` selects palette[n]; if that
+        entry is `None` (paper), we fall back to ink so the stroke stays
+        visible — an invisible stroke would erase the geometry entirely,
+        which is what `,i` is for, not `,c0`.
+        """
+        idx = mods.get("color")
+        if idx is None:
+            idx = INK_INDEX
+        color = self.palette.get(idx)
+        if color is None:  # paper or missing entry — fall back to ink
+            color = self.palette.get(INK_INDEX, "#000000")
+        return color
+
+    def _resolve_fill_color(self, mods) -> str:
+        """Fill color (only meaningful when mods['fill'] is True).
+
+        Spec v0.6: with no explicit `,c<n>`, fill defaults to `paper`
+        (palette index 0), which renders as `fill="none"` — invisible.
+        An explicit `,c<n>` selects palette[n] for the fill; palette[0]
+        is paper (invisible); indices >=1 draw the actual color.
+        """
+        idx = mods.get("color")
+        if idx is None:
+            idx = PAPER_INDEX
+        color = self.palette.get(idx)
+        if color is None:  # paper — emit fill="none"
+            return "none"
+        return color
 
     def _stroke_attrs(self, mods) -> str:
-        color = self._resolve_color(mods)
+        color = self._resolve_stroke_color(mods)
         parts = [
             f'stroke="{color}"',
             f'stroke-width="{self.stroke_width}"',
@@ -245,10 +291,14 @@ class SVGBackend:
         return " ".join(parts)
 
     def _paint_attrs(self, mods) -> str:
-        color = self._resolve_color(mods)
-        parts = [f'stroke="{color}"', f'stroke-width="{self.stroke_width}"']
+        stroke_color = self._resolve_stroke_color(mods)
+        parts = [
+            f'stroke="{stroke_color}"',
+            f'stroke-width="{self.stroke_width}"',
+        ]
         if mods["fill"]:
-            parts.append(f'fill="{color}"')
+            fill_color = self._resolve_fill_color(mods)
+            parts.append(f'fill="{fill_color}"')
         else:
             parts.append('fill="none"')
         if mods["dashed"]:
