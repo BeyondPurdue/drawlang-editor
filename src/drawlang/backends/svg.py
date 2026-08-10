@@ -190,7 +190,21 @@ class SVGBackend:
         self._track_bbox([(x, y), (x + w, y + h)])
 
     def finalize(self) -> str:
-        # Determine viewBox
+        # v0.6: viewBox picks one of three modes.
+        # 1. Explicit width/height from the caller (PDF export etc.) always wins.
+        # 2. Otherwise, if the drawing's geometry looks like a full-sheet
+        #    layout — bbox width or height >= SHEET_THRESHOLD language units —
+        #    lock the viewBox to A3 landscape (1191 x 801). This is what
+        #    Frame #1..#30 and pic_ex -1..-30 (title-block/composite sheets)
+        #    want: the sheet fills the preview and anything outside A3 is
+        #    clipped, matching real ES680 behaviour.
+        # 3. Otherwise, the drawing is a standalone symbol (a few dozen units
+        #    across). Auto-fit the viewBox to the bbox with a small margin so
+        #    the symbol fills the preview at legible size instead of appearing
+        #    as a dot inside a big empty A3 sheet.
+        A3_WIDTH = 1191
+        A3_HEIGHT = 801
+        SHEET_THRESHOLD = 400  # language units
         if self.width is not None and self.height is not None:
             vb_x = self.origin_x
             vb_y = self.origin_y
@@ -198,13 +212,27 @@ class SVGBackend:
             vb_h = self.height
         elif self._bbox is not None:
             xmin, ymin, xmax, ymax = self._bbox
-            pad = 5
-            vb_x = xmin - pad
-            vb_y = ymin - pad
-            vb_w = (xmax - xmin) + 2 * pad
-            vb_h = (ymax - ymin) + 2 * pad
+            bbox_w = xmax - xmin
+            bbox_h = ymax - ymin
+            if bbox_w >= SHEET_THRESHOLD or bbox_h >= SHEET_THRESHOLD:
+                # Full-sheet layout: lock to A3.
+                vb_x = 0
+                vb_y = 0
+                vb_w = A3_WIDTH
+                vb_h = A3_HEIGHT
+            else:
+                # Standalone symbol: auto-fit to bbox with margin.
+                pad = max(4, min(bbox_w, bbox_h) * 0.15)
+                vb_x = xmin - pad
+                vb_y = ymin - pad
+                vb_w = bbox_w + 2 * pad
+                vb_h = bbox_h + 2 * pad
         else:
-            vb_x, vb_y, vb_w, vb_h = 0, 0, 100, 100
+            # No geometry emitted at all.
+            vb_x = 0
+            vb_y = 0
+            vb_w = A3_WIDTH
+            vb_h = A3_HEIGHT
 
         # We render in language space (y-up). SVG is y-down. Apply a y-flip
         # transform on the root <g>. Then everything inside is in language
@@ -233,7 +261,7 @@ class SVGBackend:
         return (
             f'<svg xmlns="http://www.w3.org/2000/svg" '
             f'viewBox="{vb_x} {-(vb_y + vb_h)} {vb_w} {vb_h}" '
-            f'width="{vb_w}" height="{vb_h}" '
+            f'width="100%" height="100%" '
             f'preserveAspectRatio="xMidYMid meet" '
             f'data-content-width="{vb_w}" data-content-height="{vb_h}">\n'
             f'  <style>line,rect,path,polyline,polygon,circle,ellipse'

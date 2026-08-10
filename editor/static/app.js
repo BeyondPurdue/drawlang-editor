@@ -435,12 +435,15 @@ function resetOneToOne() {
 //   legible instead of collapsing to a black smudge.
 // User can always click 1:1 or use Ctrl+wheel to zoom in.
 function onPreviewSvgChanged() {
+  // v0.6: the SVG now fills the preview pane natively via CSS + its own
+  // preserveAspectRatio. Start with an identity CSS transform so the sheet
+  // sits at 100% fit; the user can wheel-zoom / drag-pan from there.
   const svg = currentSvg();
   if (!svg) return;
-  const { w, h } = contentSize(svg);
-  const cw = preview.clientWidth, ch = preview.clientHeight;
-  if (w > cw || h > ch) fitToContainer();
-  else resetOneToOne();
+  view.scale = 1;
+  view.tx = 0;
+  view.ty = 0;
+  applyView();
 }
 
 // --- Pan (mouse drag) ---

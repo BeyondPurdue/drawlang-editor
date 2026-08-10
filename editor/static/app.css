@@ -329,10 +329,16 @@ html, body {
 }
 .preview-canvas.dragging { cursor: grabbing; }
 .preview-canvas svg {
-  /* Rendered at ES680 native size (1 unit = 1px). Pan/zoom transforms
-     are applied by JS via CSS transform. The container clips overflow. */
+  /* v0.6: SVG always fills the preview pane as a fixed A3 landscape sheet.
+     The SVG's own viewBox (locked to 1191x801 language units in svg.py)
+     plus preserveAspectRatio=xMidYMid meet handles scaling; small drawings
+     sit at their real A3 position, big ones get clipped. Pan/zoom JS still
+     applies a CSS transform on top for user interaction. */
   position: absolute;
-  top: 0; left: 0;
+  top: 12px; left: 12px;
+  right: 12px; bottom: 12px;
+  width: calc(100% - 24px);
+  height: calc(100% - 24px);
   transform-origin: 0 0;
   background: #fafaf7;      /* paper */
   box-shadow: 0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px var(--border);
