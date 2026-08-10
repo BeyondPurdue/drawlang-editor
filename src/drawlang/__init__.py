@@ -1,7 +1,7 @@
 """
 drawlang — Reference interpreter for the Drawing Language v0.6.
 
-Implements the language defined in ../../spec/DRAWING-LANGUAGE-SPEC.md exactly.
+Implements the language defined in ../../docs/spec/drawing-language-spec.md exactly.
 
 Package layout — strict separation of concerns:
 

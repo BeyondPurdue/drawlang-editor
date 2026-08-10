@@ -6,7 +6,7 @@ A tiny, deterministic drawing language and its reference interpreter and web edi
 Nothing is drawn by ad-hoc code. Programs in the language are short ASCII strings executed by a pen-state
 interpreter. Backends translate the interpreter's abstract calls into SVG, PostScript, or PDF.
 
-- **Language spec:** [`spec/DRAWLANG-SPEC-v0.1.md`](spec/DRAWLANG-SPEC-v0.1.md) — LOCKED at v0.1.
+- **Language spec:** [`docs/spec/drawing-language-spec.md`](docs/spec/drawing-language-spec.md) — current. Version history in [`docs/spec/history/`](docs/spec/history/).
 - **Community:** [r/BeyondPurdue](https://www.reddit.com/r/BeyondPurdue/)
 - **License:** Apache 2.0 — © 2026 Beyond Purdue contributors
 
@@ -29,8 +29,8 @@ Any drawing you make is a plain text program you can commit to git, diff, templa
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  spec/                                                      │
-│  DRAWLANG-SPEC-v0.1.md — the language, code-free, locked    │
+│  docs/spec/                                                 │
+│  drawing-language-spec.md — the language, code-free         │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -131,7 +131,7 @@ Seven core opcodes, four extensions. Two-letter mnemonics, comma-separated args,
 
 Modifiers `,f` (fill), `,i` (invisible), `,d` (dashed), `,c`*n* (color) tweak individual statements.
 
-See the [language specification](spec/DRAWLANG-SPEC-v0.1.md) for the full grammar, semantics, worked examples, and the reference algorithm.
+See the [language specification](docs/spec/drawing-language-spec.md) for the full grammar, semantics, worked examples, and the reference algorithm.
 
 ---
 
