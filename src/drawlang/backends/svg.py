@@ -190,21 +190,13 @@ class SVGBackend:
         self._track_bbox([(x, y), (x + w, y + h)])
 
     def finalize(self) -> str:
-        # v0.6: viewBox picks one of three modes.
-        # 1. Explicit width/height from the caller (PDF export etc.) always wins.
-        # 2. Otherwise, if the drawing's geometry looks like a full-sheet
-        #    layout — bbox width or height >= SHEET_THRESHOLD language units —
-        #    lock the viewBox to A3 landscape (1191 x 801). This is what
-        #    Frame #1..#30 and pic_ex -1..-30 (title-block/composite sheets)
-        #    want: the sheet fills the preview and anything outside A3 is
-        #    clipped, matching real ES680 behaviour.
-        # 3. Otherwise, the drawing is a standalone symbol (a few dozen units
-        #    across). Auto-fit the viewBox to the bbox with a small margin so
-        #    the symbol fills the preview at legible size instead of appearing
-        #    as a dot inside a big empty A3 sheet.
+        # v0.6: viewBox is always auto-fit to the drawing's own bounding box
+        # (unless the caller passed explicit width/height, e.g. PDF export).
+        # This works uniformly for tiny symbols, A3 sheets, and oversized
+        # pic_ex composites that legitimately span far more than A3.
+        # Callers wanting an A3-locked view should pass explicit dimensions.
         A3_WIDTH = 1191
         A3_HEIGHT = 801
-        SHEET_THRESHOLD = 400  # language units
         if self.width is not None and self.height is not None:
             vb_x = self.origin_x
             vb_y = self.origin_y
@@ -214,21 +206,13 @@ class SVGBackend:
             xmin, ymin, xmax, ymax = self._bbox
             bbox_w = xmax - xmin
             bbox_h = ymax - ymin
-            if bbox_w >= SHEET_THRESHOLD or bbox_h >= SHEET_THRESHOLD:
-                # Full-sheet layout: lock to A3.
-                vb_x = 0
-                vb_y = 0
-                vb_w = A3_WIDTH
-                vb_h = A3_HEIGHT
-            else:
-                # Standalone symbol: auto-fit to bbox with margin.
-                pad = max(4, min(bbox_w, bbox_h) * 0.15)
-                vb_x = xmin - pad
-                vb_y = ymin - pad
-                vb_w = bbox_w + 2 * pad
-                vb_h = bbox_h + 2 * pad
+            pad = max(4, min(bbox_w, bbox_h) * 0.05)
+            vb_x = xmin - pad
+            vb_y = ymin - pad
+            vb_w = bbox_w + 2 * pad
+            vb_h = bbox_h + 2 * pad
         else:
-            # No geometry emitted at all.
+            # No geometry emitted at all: show blank A3.
             vb_x = 0
             vb_y = 0
             vb_w = A3_WIDTH
