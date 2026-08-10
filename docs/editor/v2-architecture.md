@@ -6,9 +6,8 @@
 
 Companion documents:
 
-- [`../spec/es680-drawing-system-consolidated.md`](../spec/es680-drawing-system-consolidated.md) — what the system is and how it works.
-- [`../spec/drawing-language-spec.md`](../spec/drawing-language-spec.md) — the pen-instruction language.
-- [`../notes/07-coordinate-system-and-frames.md`](../notes/07-coordinate-system-and-frames.md) — coordinate system rules.
+- [`../spec/drawing-language-spec.md`](../spec/drawing-language-spec.md) — the DrawLang language this editor targets.
+- [`../spec/coordinate-system-and-frames.md`](../spec/coordinate-system-and-frames.md) — coordinate system rules.
 
 ---
 

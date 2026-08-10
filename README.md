@@ -10,6 +10,8 @@ interpreter. Backends translate the interpreter's abstract calls into SVG, PostS
 - **Community:** [r/BeyondPurdue](https://www.reddit.com/r/BeyondPurdue/)
 - **License:** Apache 2.0 — © 2026 Beyond Purdue contributors
 
+> **Not affiliated with Siemens.** The DrawLang language and this editor are independent, clean-room re-implementations that emerged from studying the behaviour of legacy vector-drawing databases. The specification cites historical Siemens ES680 pictogram behaviour only where necessary to justify grammar decisions; no Siemens source code, manuals, or database exports are included in this repository, and no endorsement by Siemens is implied. Siemens®, TXP®, SPPA-T3000®, and ES680® are trademarks of their respective owners.
+
 ---
 
 ## Why
