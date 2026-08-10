@@ -382,11 +382,22 @@ def _split_positional_and_modifiers(
     A modifier is any trailing field that matches a modifier pattern.
     Positional args come first, modifiers last (spec §8: "MUST appear after
     all positional arguments").
+
+    When the opcode has a string-tail argument (`tx`), the field at
+    `spec["string_tail"]` is the string; it must never be reclassified as a
+    modifier even when it happens to be a single lowercase letter (e.g.
+    `tx,0.,n`). `_split_with_string_tail` has already peeled trailing color
+    modifiers off the string, so any remaining field after the string index
+    is a genuine modifier.
     """
+    protect_index = spec.get("string_tail")
     # Modifiers are only "found" at the tail. Walk from the right until we
-    # hit a field that isn't a modifier.
+    # hit a field that isn't a modifier (or the protected string index).
     n_modifiers = 0
-    for f in reversed(fields):
+    for idx_from_right, f in enumerate(reversed(fields)):
+        real_idx = len(fields) - 1 - idx_from_right
+        if protect_index is not None and real_idx == protect_index:
+            break
         if _looks_like_modifier(f):
             n_modifiers += 1
         else:

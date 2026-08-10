@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "drawlang"
-version = "0.3.0"
+version = "0.3.1"
 description = "Reference interpreter for the Drawing Language v0.3 (Beyond Purdue Editor)"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -160,7 +160,17 @@ def parse_pic_ex(text: str) -> list[dict]:
     results = []
     for pic_id, segments in sorted(grouped.items()):
         parts = [segments[k] for k in sorted(segments.keys())]
-        cmd_full = "".join(parts)
+        # Join segments defensively: if the previous segment does not end
+        # with ';' (which happens when the source cmd_len prefix truncates
+        # the payload mid-statement, e.g. `...dl,7,-2` on seq=N followed by
+        # `mr,9,3;...` on seq=N+1), inserting a ';' prevents two opcodes
+        # from being glued into an invalid statement like `dl,7,-2mr,9,3`.
+        joined_parts: list[str] = []
+        for i, part in enumerate(parts):
+            if i > 0 and joined_parts and not joined_parts[-1].rstrip().endswith(";"):
+                joined_parts.append(";")
+            joined_parts.append(part)
+        cmd_full = "".join(joined_parts)
         if not cmd_full.endswith(";"):
             cmd_full += ";"
         results.append({
@@ -379,6 +389,50 @@ def pic_b_to_cmd(pic_b_row: dict) -> str:
     return f"ma,{anchor_x},{anchor_y};\n{pic_b_row['cmd']}"
 
 
+def _is_stub_cmd(cmd: str) -> bool:
+    """A pic_b cmd is a 'stub' (empty template) when its only pen instruction
+    is a zero-distance move — the ES680 editor stores project-scope symbols
+    (PROJPICT, etc.) with a 'mr,0,0;' body because their real content is
+    injected per-project at draw time. Render these with a visible fallback.
+    """
+    if not cmd:
+        return True
+    # Strip whitespace and normalize; keep only non-comment statements
+    stmts = [
+        s.strip()
+        for s in cmd.split(";")
+        if s.strip() and not s.strip().startswith("#")
+    ]
+    if not stmts:
+        return True
+    # Only pen-move opcodes (mr, ma) with no drawing → stub
+    return all(s.split(",")[0] in {"mr", "ma"} for s in stmts)
+
+
+def _ensure_terminated(cmd: str) -> str:
+    """Guarantee a cmd fragment ends with ';' so appending the next statement
+    can't glue two opcodes together.
+
+    A few source rows in the .csn dumps have cmd_len prefixes that truncate
+    the payload mid-instruction (e.g. `...dl,-10` with no closing `;`). If we
+    can't safely terminate (last token is a partial number-in-progress), drop
+    the trailing incomplete fragment before adding `;`.
+    """
+    if not cmd:
+        return ""
+    stripped = cmd.rstrip()
+    if not stripped:
+        return ""
+    if stripped.endswith(";"):
+        return stripped
+    # Try to salvage: cut the last unterminated fragment at the previous ';'
+    last_semi = stripped.rfind(";")
+    if last_semi >= 0:
+        return stripped[: last_semi + 1]
+    # No prior ';' at all — return empty rather than emit garbage
+    return ""
+
+
 def compose_plan_page(
     plan: dict,
     placements_on_page: list[dict],
@@ -396,6 +450,11 @@ def compose_plan_page(
          (ma,po_x,po_y) followed by the symbol's cmd program. Symbols are
          written in pen-relative style, so anchoring with `ma` positions them
          at the recorded plan coordinate.
+      3. Every emitted symbol cmd is guaranteed to terminate with ';' so the
+         next placement's 'ma' statement cannot merge into the previous one.
+      4. Stub symbols (project-scope PROJPICT etc. stored as 'mr,0,0;') are
+         rendered as a visible labeled marker so 17k+ placements that would
+         otherwise be invisible show up on the drawing.
 
     Origin assumption: cmd coordinates share the frame's coordinate system
     (lower-left origin per drawlang spec, positive integers). po_x, po_y are
@@ -418,6 +477,7 @@ def compose_plan_page(
     lines.append("")
     lines.append(f"# ---- {len(placements_on_page)} placements ----")
     missing = 0
+    stubbed = 0
     for pl in placements_on_page:
         pid = pl["pic_id"]
         po_x, po_y = pl["po_x"], pl["po_y"]
@@ -426,13 +486,36 @@ def compose_plan_page(
             missing += 1
             # Draw a tiny marker so the placement is visible even without art
             lines.append(f"# pic_id {pid} not in library")
-            lines.append(f"ma,{po_x},{po_y}; ci,2;")
+            lines.append(f"ma,{po_x},{po_y};ci,2;")
+            continue
+        cmd = _ensure_terminated(sym["cmd"])
+        if _is_stub_cmd(cmd):
+            # Project-scope stub — render a visible fallback so the placement
+            # doesn't vanish. Small circle + short KKS-style label.
+            stubbed += 1
+            name = sym.get("name") or f"pic{pid}"
+            # Sanitize label: strip characters that clash with the language
+            label = str(name).replace(";", " ").replace(",", " ")[:16]
+            lines.append(
+                f"# loc_id={pl['loc_id']} pic_id={pid} STUB '{name}' at ({po_x},{po_y})"
+            )
+            lines.append(f"ma,{po_x},{po_y};")
+            lines.append("ci,6;")
+            lines.append("mr,8,-3;")
+            lines.append("tz,7;")
+            lines.append(f"tx,0.,{label};")
             continue
         lines.append(f"# loc_id={pl['loc_id']} pic_id={pid} at ({po_x},{po_y})")
         lines.append(f"ma,{po_x},{po_y};")
-        lines.append(sym["cmd"].rstrip())
+        lines.append(cmd)
     if missing:
-        lines.append(f"# {missing} placement(s) reference symbols not present in the loaded library")
+        lines.append(
+            f"# {missing} placement(s) reference symbols not present in the loaded library"
+        )
+    if stubbed:
+        lines.append(
+            f"# {stubbed} placement(s) use project-scope stub symbols (rendered as labeled markers)"
+        )
     return "\n".join(lines) + "\n"
 
 

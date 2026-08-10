@@ -62,6 +62,44 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def _read_git_sha() -> str:
+    """Best-effort read of the deployed commit SHA. Never raises."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip() or "unknown"
+    except Exception:
+        pass
+    return "unknown"
+
+
+_GIT_SHA_CACHE = _read_git_sha()
+
+
+@app.get("/health")
+def health() -> dict:
+    """Deployment health probe. Reports package version, spec version, and
+    the deployed git SHA so that after a `git pull` we can confirm the new
+    code is actually live without ssh access.
+    """
+    try:
+        from drawlang import __version__ as pkg_version
+    except Exception:
+        pkg_version = "unknown"
+    return {
+        "status": "ok",
+        "spec_version": SPEC_VERSION,
+        "drawlang_version": pkg_version,
+        "git_sha": _GIT_SHA_CACHE,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
