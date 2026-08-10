@@ -8,7 +8,9 @@ Code lives at the repo root (`editor/`, `research/`, `src/`, `tests/`, `data/`, 
 
 ```
 docs/
-├── spec/           Drawing-language specification (current + version history)
+├── spec/           Consolidated reference + drawing-language spec (current + history)
+├── editor/         Editor v2 architecture, API, wireframes
+├── diagrams/       SVG diagrams referenced from the docs
 ├── studies/        Reconstruction studies against real project dumps
 ├── notes/          Working notes on the ES680 data model and rendering
 ├── inventory/      Google Drive inventory of ES680 backups and printouts
@@ -16,18 +18,38 @@ docs/
 └── deploy/         Runbooks for deploying the editor
 ```
 
+## Where to start
+
+1. **[`spec/es680-drawing-system-consolidated.md`](spec/es680-drawing-system-consolidated.md)** — the single "everything we know" reference. If you read one document, read this one.
+2. **[`editor/v2-architecture.md`](editor/v2-architecture.md)** — the editor we're designing. Awaiting review before any code is written.
+
 ## What's in each folder
 
-### `spec/` — Drawing-language specification
+### `spec/` — Specifications
 
-The mini-language ("pen instructions") used to draw everything on every plan.
-Current spec plus every published revision.
+The consolidated reference plus the mini-language ("pen instructions") specification.
 
 | File | Purpose |
 |---|---|
-| [`spec/drawing-language-spec.md`](spec/drawing-language-spec.md) | Current specification (Markdown source of truth) |
+| [`spec/es680-drawing-system-consolidated.md`](spec/es680-drawing-system-consolidated.md) | **Everything we know** — data model, mini-language, coordinate system, rendering pipeline, reconstruction proof, open items |
+| [`spec/drawing-language-spec.md`](spec/drawing-language-spec.md) | Formal `cmd` specification (grammar + worked examples) |
 | [`spec/drawing-language-spec.docx`](spec/drawing-language-spec.docx) | Same, rendered to Word |
 | [`spec/history/`](spec/history/) | Frozen v0.1 → v0.6 snapshots |
+
+### `editor/` — Editor v2 design
+
+| File | Purpose |
+|---|---|
+| [`editor/v2-architecture.md`](editor/v2-architecture.md) | Editor rewrite: architecture, data model, REST API, component tree, UI wireframes. **Awaiting review — no code yet.** |
+
+### `diagrams/` — SVG diagrams
+
+| File | Purpose |
+|---|---|
+| [`diagrams/render-pipeline.svg`](diagrams/render-pipeline.svg) | ES680 rendering pipeline (DB → PageDescription → PS/PDF/SVG) |
+| [`diagrams/data-model-er.svg`](diagrams/data-model-er.svg) | ES680 data-model families (catalog + user + cross-refs) |
+| [`diagrams/editor-component-tree.svg`](diagrams/editor-component-tree.svg) | Editor v2 React component tree |
+| [`diagrams/editor-wireframe.svg`](diagrams/editor-wireframe.svg) | Editor v2 main-screen wireframe |
 
 ### `studies/` — Reconstruction studies
 

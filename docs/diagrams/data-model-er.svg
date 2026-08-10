@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 720" font-family="Helvetica, Arial, sans-serif">
+  <style>
+    .cat { fill: #BCE2E7; stroke: #1B474D; stroke-width: 1.5; }
+    .usr { fill: #FFC553; stroke: #6E522B; stroke-width: 1.5; }
+    .xref { fill: #944454; stroke: #944454; stroke-width: 1.5; }
+    .tblname { font-size: 14px; font-weight: 700; fill: #28251D; }
+    .tblname-w { font-size: 14px; font-weight: 700; fill: #FFFFFF; }
+    .col { font-size: 11px; fill: #28251D; }
+    .col-w { font-size: 11px; fill: #FFFFFF; }
+    .link { stroke: #7A7974; stroke-width: 1.2; fill: none; stroke-dasharray: 3,3; }
+    .title { font-size: 20px; font-weight: 700; fill: #28251D; }
+    .caption { font-size: 12px; fill: #7A7974; font-style: italic; }
+    .legend { font-size: 11px; fill: #28251D; }
+  </style>
+
+  <text x="550" y="28" text-anchor="middle" class="title">ES680 Data Model — table families</text>
+  <text x="550" y="48" text-anchor="middle" class="caption">shared catalog (read-only) · per-plant user tables (read-write) · cross-references</text>
+
+  <!-- Legend -->
+  <rect x="40" y="65" width="14" height="14" class="cat"/>
+  <text x="60" y="77" class="legend">catalog (shared, read-only)</text>
+  <rect x="230" y="65" width="14" height="14" class="usr"/>
+  <text x="250" y="77" class="legend">user project (read-write)</text>
+  <rect x="400" y="65" width="14" height="14" class="xref"/>
+  <text x="420" y="77" class="legend">cross-reference index</text>
+
+  <!-- Catalog: pictograms -->
+  <rect x="40" y="110" width="220" height="150" rx="6" class="cat"/>
+  <text x="150" y="130" text-anchor="middle" class="tblname">Pictogram catalog</text>
+  <text x="50" y="150" class="col">pic_b     — base symbol program</text>
+  <text x="50" y="166" class="col">pic_ex    — variant / frame program</text>
+  <text x="50" y="182" class="col">pic_p     — pin definitions</text>
+  <text x="50" y="198" class="col">pic_d     — parameter labels</text>
+  <text x="50" y="214" class="col">pic_m     — measurement labels</text>
+  <text x="50" y="230" class="col">pic_kanal — channel resolution</text>
+  <text x="50" y="246" class="col">pic_status — version metadata</text>
+
+  <!-- Catalog: frames -->
+  <rect x="290" y="110" width="220" height="80" rx="6" class="cat"/>
+  <text x="400" y="130" text-anchor="middle" class="tblname">Frame catalog</text>
+  <text x="300" y="150" class="col">frame  — grid corners, margins</text>
+  <text x="300" y="166" class="col">raster — grid density</text>
+  <text x="300" y="182" class="col">   pic_ex[-frm_id] = border program</text>
+
+  <!-- Catalog: masks -->
+  <rect x="290" y="210" width="220" height="70" rx="6" class="cat"/>
+  <text x="400" y="230" text-anchor="middle" class="tblname">Mask catalog</text>
+  <text x="300" y="250" class="col">msk_g — pin positions</text>
+  <text x="300" y="266" class="col">msk_b — mask base</text>
+
+  <!-- Catalog: block types -->
+  <rect x="540" y="110" width="220" height="120" rx="6" class="cat"/>
+  <text x="650" y="130" text-anchor="middle" class="tblname">Block-type catalog</text>
+  <text x="550" y="150" class="col">bst_allg — general</text>
+  <text x="550" y="166" class="col">bst_ea   — I/O</text>
+  <text x="550" y="182" class="col">bst_bit  — bit-level</text>
+  <text x="550" y="198" class="col">bst_for  — formula</text>
+  <text x="550" y="214" class="col">bst_xp*  — extended XP family</text>
+
+  <!-- User tables -->
+  <rect x="40" y="330" width="500" height="220" rx="6" class="usr"/>
+  <text x="290" y="350" text-anchor="middle" class="tblname">User project tables (per plant)</text>
+  <text x="50" y="372" class="col"><tspan font-weight="700">obj_f</tspan>    — one row per plan (KKS, frame, pages, author, date)</text>
+  <text x="50" y="390" class="col"><tspan font-weight="700">obj_g</tspan>    — placement of a pictogram (pic_id, po_x, po_y, page, rot)</text>
+  <text x="50" y="408" class="col"><tspan font-weight="700">obj_d</tspan>    — text payload shown inside/beside a placement</text>
+  <text x="50" y="426" class="col"><tspan font-weight="700">obj_s</tspan>    — additional symbol data</text>
+  <text x="50" y="444" class="col"><tspan font-weight="700">ver_b</tspan>    — wire polyline (self-contained: abs start + Δ deltas)</text>
+  <text x="50" y="462" class="col"><tspan font-weight="700">konnektor</tspan> — cross-page connector arrows</text>
+  <text x="50" y="480" class="col"><tspan font-weight="700">schr_d</tspan>   — title-block variable text (per plan, per field)</text>
+  <text x="50" y="510" class="col" font-style="italic">All rows keyed by plan_id → obj_f.plan_id.</text>
+  <text x="50" y="528" class="col" font-style="italic">obj_g / obj_d / schr_d share loc_id for the same "thing".</text>
+
+  <!-- Cross-refs -->
+  <rect x="580" y="330" width="440" height="120" rx="6" class="xref"/>
+  <text x="800" y="350" text-anchor="middle" class="tblname-w">Cross-reference tables (per plant)</text>
+  <text x="590" y="372" class="col-w"><tspan font-weight="700">zuli</tspan>     — signal cross-refs. q_pid=source plan, z_pid=target plan</text>
+  <text x="590" y="390" class="col-w"><tspan font-weight="700">obj_link</tspan> — cross-plan pictogram-usage index</text>
+  <text x="590" y="418" class="col-w" font-style="italic">Present only for YFR (logic). Absent for YDR/YDM (HMI/marshalling).</text>
+
+  <!-- Arrows -->
+  <path d="M 260 170 L 288 170" class="link" marker-end="url(#a)"/>
+  <path d="M 400 190 L 400 208" class="link" marker-end="url(#a)"/>
+  <path d="M 200 260 L 200 328" class="link" marker-end="url(#a)"/>
+  <path d="M 400 280 L 400 328" class="link" marker-end="url(#a)"/>
+
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7A7974"/>
+    </marker>
+  </defs>
+
+  <!-- Footer notes -->
+  <text x="550" y="600" text-anchor="middle" class="caption">Read the columns and citations in docs/notes/02-drawing-engine.md and docs/notes/03-user-project-tables.md.</text>
+  <text x="550" y="622" text-anchor="middle" class="caption">Every visible mark = pic_b.cmd or pic_ex.cmd executed at an (obj_g.po_x, obj_g.po_y) placement.</text>
+  <text x="550" y="644" text-anchor="middle" class="caption">A frame is just pic_ex where pic_id = -frm_id.</text>
+</svg>

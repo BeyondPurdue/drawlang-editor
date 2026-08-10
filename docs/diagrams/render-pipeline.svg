@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 620" font-family="Helvetica, Arial, sans-serif">
+  <style>
+    .box { fill: #F9F8F5; stroke: #28251D; stroke-width: 1.5; }
+    .box-src { fill: #BCE2E7; stroke: #1B474D; stroke-width: 1.5; }
+    .box-out { fill: #FFC553; stroke: #6E522B; stroke-width: 1.5; }
+    .box-canonical { fill: #20808D; stroke: #1B474D; stroke-width: 2; }
+    .lbl { font-size: 14px; fill: #28251D; }
+    .lbl-w { font-size: 14px; fill: #FFFFFF; font-weight: 600; }
+    .sub { font-size: 11px; fill: #7A7974; }
+    .title { font-size: 20px; font-weight: 700; fill: #28251D; }
+    .caption { font-size: 12px; fill: #7A7974; font-style: italic; }
+    .arrow { stroke: #28251D; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#28251D"/>
+    </marker>
+  </defs>
+
+  <text x="500" y="30" text-anchor="middle" class="title">ES680 Rendering Pipeline</text>
+  <text x="500" y="52" text-anchor="middle" class="caption">Database → PageDescription → three output backends</text>
+
+  <!-- Sources -->
+  <rect x="40" y="90" width="200" height="70" rx="8" class="box-src"/>
+  <text x="140" y="120" text-anchor="middle" class="lbl">Ingres tables</text>
+  <text x="140" y="140" text-anchor="middle" class="sub">or .sag / .csn dumps</text>
+
+  <!-- Reader -->
+  <rect x="330" y="90" width="220" height="70" rx="8" class="box"/>
+  <text x="440" y="120" text-anchor="middle" class="lbl">csn_reader / sag_reader</text>
+  <text x="440" y="140" text-anchor="middle" class="sub">length-prefix vch decoder</text>
+
+  <!-- Assembler -->
+  <rect x="640" y="90" width="320" height="70" rx="8" class="box"/>
+  <text x="800" y="120" text-anchor="middle" class="lbl">Per-plan assembler</text>
+  <text x="800" y="140" text-anchor="middle" class="sub">obj_f → frame → pic_ex → obj_g → ver_b → schr_d</text>
+
+  <!-- Page description -->
+  <rect x="340" y="230" width="320" height="90" rx="8" class="box"/>
+  <text x="500" y="260" text-anchor="middle" class="lbl" font-weight="600">PageDescription</text>
+  <text x="500" y="282" text-anchor="middle" class="sub">frame + paper size + primitives</text>
+  <text x="500" y="300" text-anchor="middle" class="sub">(all coordinates in frame pixels)</text>
+
+  <!-- Three outputs -->
+  <rect x="80" y="410" width="220" height="80" rx="8" class="box-canonical"/>
+  <text x="190" y="442" text-anchor="middle" class="lbl-w">PostScript</text>
+  <text x="190" y="462" text-anchor="middle" class="lbl-w" font-size="11">(canonical)</text>
+  <text x="190" y="478" text-anchor="middle" class="sub" fill="#FFFFFF">absolute mm on paper</text>
+
+  <rect x="390" y="410" width="220" height="80" rx="8" class="box-out"/>
+  <text x="500" y="442" text-anchor="middle" class="lbl">PDF</text>
+  <text x="500" y="462" text-anchor="middle" class="sub">via ps2pdf</text>
+  <text x="500" y="478" text-anchor="middle" class="sub">mechanical conversion</text>
+
+  <rect x="700" y="410" width="220" height="80" rx="8" class="box"/>
+  <text x="810" y="442" text-anchor="middle" class="lbl">SVG</text>
+  <text x="810" y="462" text-anchor="middle" class="sub">browser preview only</text>
+  <text x="810" y="478" text-anchor="middle" class="sub">viewBox from paper size</text>
+
+  <!-- Arrows -->
+  <path d="M 240 125 L 328 125" class="arrow"/>
+  <path d="M 550 125 L 638 125" class="arrow"/>
+  <path d="M 800 165 L 500 226" class="arrow"/>
+  <path d="M 440 320 L 210 406" class="arrow"/>
+  <path d="M 500 320 L 500 406" class="arrow"/>
+  <path d="M 560 320 L 790 406" class="arrow"/>
+
+  <!-- Bottom caption -->
+  <text x="500" y="540" text-anchor="middle" class="caption">Same PageDescription → all three backends. Change output format ≠ change source data.</text>
+  <text x="500" y="565" text-anchor="middle" class="caption">Coordinates only leave "frame pixel" space when a paper size is chosen.</text>
+</svg>

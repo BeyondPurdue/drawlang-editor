@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 720" font-family="Helvetica, Arial, sans-serif">
+  <style>
+    .app { fill: #01696F; stroke: #01696F; }
+    .page { fill: #20808D; stroke: #20808D; }
+    .comp { fill: #BCE2E7; stroke: #1B474D; stroke-width: 1.2; }
+    .lbl-w { font-size: 13px; fill: #FFFFFF; font-weight: 700; }
+    .lbl { font-size: 12px; fill: #28251D; }
+    .sub { font-size: 10px; fill: #7A7974; }
+    .arrow { stroke: #7A7974; stroke-width: 1.2; fill: none; }
+    .title { font-size: 20px; font-weight: 700; fill: #28251D; }
+    .caption { font-size: 12px; fill: #7A7974; font-style: italic; }
+  </style>
+
+  <text x="550" y="30" text-anchor="middle" class="title">Editor v2 — Component Tree</text>
+  <text x="550" y="50" text-anchor="middle" class="caption">React SPA, Zustand store, three panels around one canvas</text>
+
+  <!-- App -->
+  <rect x="490" y="80" width="120" height="40" rx="6" class="app"/>
+  <text x="550" y="105" text-anchor="middle" class="lbl-w">App</text>
+
+  <!-- Pages -->
+  <rect x="200" y="160" width="180" height="40" rx="6" class="page"/>
+  <text x="290" y="185" text-anchor="middle" class="lbl-w">LandingPage</text>
+  <rect x="410" y="160" width="180" height="40" rx="6" class="page"/>
+  <text x="500" y="185" text-anchor="middle" class="lbl-w">FramePickerModal</text>
+  <rect x="620" y="160" width="240" height="40" rx="6" class="page"/>
+  <text x="740" y="185" text-anchor="middle" class="lbl-w">EditorPage  (/d/:plan_id)</text>
+
+  <!-- EditorPage sections -->
+  <rect x="80" y="260" width="160" height="40" rx="6" class="comp"/>
+  <text x="160" y="285" text-anchor="middle" class="lbl">TopBar</text>
+  <rect x="270" y="260" width="160" height="40" rx="6" class="comp"/>
+  <text x="350" y="285" text-anchor="middle" class="lbl">LeftPalette</text>
+  <rect x="460" y="260" width="160" height="40" rx="6" class="comp"/>
+  <text x="540" y="285" text-anchor="middle" class="lbl">Canvas</text>
+  <rect x="650" y="260" width="160" height="40" rx="6" class="comp"/>
+  <text x="730" y="285" text-anchor="middle" class="lbl">RightInspector</text>
+  <rect x="840" y="260" width="180" height="40" rx="6" class="comp"/>
+  <text x="930" y="285" text-anchor="middle" class="lbl">BottomStatusBar</text>
+
+  <!-- TopBar children -->
+  <rect x="30" y="340" width="120" height="34" rx="4" class="comp"/><text x="90" y="362" text-anchor="middle" class="sub">FileMenu</text>
+  <rect x="160" y="340" width="120" height="34" rx="4" class="comp"/><text x="220" y="362" text-anchor="middle" class="sub">DrawingTitle</text>
+
+  <!-- Palette children -->
+  <rect x="270" y="340" width="160" height="34" rx="4" class="comp"/><text x="350" y="362" text-anchor="middle" class="sub">PaletteSearch</text>
+  <rect x="270" y="380" width="160" height="34" rx="4" class="comp"/><text x="350" y="402" text-anchor="middle" class="sub">PictogramGrid</text>
+  <rect x="270" y="420" width="160" height="34" rx="4" class="comp"/><text x="350" y="442" text-anchor="middle" class="sub">TemplatesList</text>
+
+  <!-- Canvas children -->
+  <rect x="460" y="340" width="160" height="34" rx="4" class="comp"/><text x="540" y="362" text-anchor="middle" class="sub">FrameLayer</text>
+  <rect x="460" y="380" width="160" height="34" rx="4" class="comp"/><text x="540" y="402" text-anchor="middle" class="sub">PlacementLayer</text>
+  <rect x="460" y="420" width="160" height="34" rx="4" class="comp"/><text x="540" y="442" text-anchor="middle" class="sub">WireLayer (read-only)</text>
+  <rect x="460" y="460" width="160" height="34" rx="4" class="comp"/><text x="540" y="482" text-anchor="middle" class="sub">TitleBlockLayer</text>
+  <rect x="460" y="500" width="160" height="34" rx="4" class="comp"/><text x="540" y="522" text-anchor="middle" class="sub">SelectionLayer</text>
+
+  <!-- Inspector children -->
+  <rect x="650" y="340" width="160" height="34" rx="4" class="comp"/><text x="730" y="362" text-anchor="middle" class="sub">NoSelection</text>
+  <rect x="650" y="380" width="160" height="34" rx="4" class="comp"/><text x="730" y="402" text-anchor="middle" class="sub">PlacementInspector</text>
+  <rect x="650" y="420" width="160" height="34" rx="4" class="comp"/><text x="730" y="442" text-anchor="middle" class="sub">TitleBlockInspector</text>
+  <rect x="650" y="460" width="160" height="34" rx="4" class="comp"/><text x="730" y="482" text-anchor="middle" class="sub">DrawingInspector</text>
+
+  <!-- StatusBar children -->
+  <rect x="840" y="340" width="180" height="34" rx="4" class="comp"/><text x="930" y="362" text-anchor="middle" class="sub">Cursor · Zoom · SaveState</text>
+
+  <!-- Arrows: App -> pages -->
+  <path d="M 550 120 L 290 158" class="arrow"/>
+  <path d="M 550 120 L 500 158" class="arrow"/>
+  <path d="M 550 120 L 740 158" class="arrow"/>
+  <!-- Editor -> sections -->
+  <path d="M 740 200 L 160 258" class="arrow"/>
+  <path d="M 740 200 L 350 258" class="arrow"/>
+  <path d="M 740 200 L 540 258" class="arrow"/>
+  <path d="M 740 200 L 730 258" class="arrow"/>
+  <path d="M 740 200 L 930 258" class="arrow"/>
+
+  <!-- Store -->
+  <rect x="70" y="600" width="960" height="60" rx="8" class="app"/>
+  <text x="550" y="628" text-anchor="middle" class="lbl-w">Zustand store — useDrawingStore()</text>
+  <text x="550" y="648" text-anchor="middle" class="sub" fill="#FFFFFF">Drawing · selectedLocId · currentPage · saveState · history</text>
+  <text x="550" y="690" text-anchor="middle" class="caption">Every component reads from the store. Only the API layer writes.</text>
+</svg>
