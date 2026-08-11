@@ -92,6 +92,20 @@
     <button id="render-btn" class="primary">Render</button>
   </header>
 
+  <div id="cursor-bubble" class="cursor-bubble" style="display:none">
+    <div class="cb-coord" id="cb-coord">x: 0  y: 0</div>
+    <div class="cb-info" id="cb-info"></div>
+    <div class="cb-buttons">
+      <button data-act="rot-ccw" title="Rotate CCW">↶</button>
+      <button data-act="rot-cw" title="Rotate CW">↷</button>
+      <button data-act="rot-180" title="180°">180°</button>
+      <button data-act="mir-h" title="Mirror H">⇔</button>
+      <button data-act="mir-v" title="Mirror V">⇕</button>
+      <button data-act="dup" title="Duplicate">D</button>
+      <button data-act="copy" title="Copy DL">C</button>
+      <button data-act="del" title="Delete" style="color:#a12c7b">✕</button>
+    </div>
+  </div>
   <aside class="sidebar" id="library-panel">
     <div class="lib-tabs">
       <div class="lib-tab active" data-tab="primitives">Primitives</div>

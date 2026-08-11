@@ -40,6 +40,7 @@ from app.import_library import (  # noqa: E402
 from app import storage  # noqa: E402
 from app import canvases as _canvases  # noqa: E402
 from app import library as _library  # noqa: E402
+from app import tagged_svg as _tagged  # noqa: E402  (v0.7 editor tagging)
 
 
 app = FastAPI(title="Drawing Language Editor", version=SPEC_VERSION)
@@ -689,13 +690,38 @@ def api_canvases_program(id_or_slug: str) -> Response:
 
 
 @app.post("/api/canvases/{id_or_slug}/render")
-def api_canvases_render(id_or_slug: str) -> dict:
-    """Render a canvas by joining its statements and running the interpreter."""
+def api_canvases_render(id_or_slug: str, tagged: bool = False) -> dict:
+    """Render a canvas by joining its statements and running the interpreter.
+
+    When ``tagged=true``, each canvas statement's SVG output is wrapped in
+    a ``<g data-statement-id="N">`` where N is the DB row id, so the
+    editor can round-trip clicks between the rendered element and the
+    statements list. Frame statements are unwrapped (they are not
+    editable rows in the canvas). The language layer is unchanged; the
+    wrapping happens in editor.app.tagged_svg.
+    """
+    data = _canvases.get_canvas(id_or_slug)
+    if data is None:
+        raise HTTPException(status_code=404, detail="canvas not found")
     program = _canvases.get_canvas_program(id_or_slug)
     if program is None:
         raise HTTPException(status_code=404, detail="canvas not found")
     try:
-        svg = render(program, backend="svg")
+        if tagged:
+            # Build source_index -> row_id map. Frame statements (if any)
+            # come first in the composed program; they get consecutive
+            # source_index values starting at 0. Canvas rows come after,
+            # with source_index starting at the frame statement count.
+            frame_len = _count_frame_statements(data)
+            source_to_row = {
+                frame_len + i: r["id"]
+                for i, r in enumerate(data["statements"])
+            }
+            backend = _tagged.TaggedSVGBackend()
+            backend.set_source_to_row_map(source_to_row)
+            svg = _tagged.run_tagged(program, backend)
+        else:
+            svg = render(program, backend="svg")
     except DrawLangError as e:
         return {
             "ok": False,
@@ -704,6 +730,28 @@ def api_canvases_render(id_or_slug: str) -> dict:
             "statement_index": getattr(e, "statement_index", None),
         }
     return {"ok": True, "output": svg}
+
+
+def _count_frame_statements(canvas_data: dict) -> int:
+    """Count how many statements the frame contributes to the composed program.
+
+    The frame's drawlang is prepended before the canvas body, so its
+    statements consume source_index positions 0..N-1 in the parsed
+    program. We only need the count, not the parsed statements.
+    """
+    frame_id = canvas_data["canvas"].get("frame_id")
+    if not frame_id:
+        return 0
+    try:
+        from app import frames as _frames_mod  # local import to dodge cycles
+        frame = _frames_mod.get_frame(frame_id)
+        prog = (frame or {}).get("drawlang") or (frame or {}).get("program") or ""
+        if not prog:
+            return 0
+        from drawlang.parser import parse as _parse
+        return len(_parse(prog))
+    except Exception:
+        return 0
 
 
 @app.delete("/api/canvases/{id_or_slug}")

@@ -86,7 +86,10 @@ async function loadFrameList() {
 
 async function renderCanvas() {
   if (!state.currentCanvas) return;
-  const res = await api(`/api/canvases/${state.currentCanvas}/render`, {
+  // v0.7: request tagged render so each canvas statement's SVG is
+  // wrapped in <g data-statement-id="N">…</g>. This is what makes
+  // canvas ↔ statements bidirectional selection work.
+  const res = await api(`/api/canvases/${state.currentCanvas}/render?tagged=true`, {
     method: "POST",
     body: JSON.stringify({}),
   });
@@ -105,6 +108,8 @@ async function renderCanvas() {
   }
   $("stmt-status").textContent = `Rendered ${state.statements.length} statements`;
   $("stmt-status").className = "status ok";
+  // Re-apply any pre-existing selection to the newly rendered SVG.
+  applySelectionHighlights();
 }
 
 function hookSvgEvents(svg) {
@@ -120,21 +125,71 @@ function hookSvgEvents(svg) {
   // elements where getScreenCTM() can be null.
   const host = $("svg-host");
   host.onclick = (e) => {
-    if (!state.pendingDrop) return;
-    const p = toPaper(svgPoint(svg, e));
-    const drop = state.pendingDrop;
-    state.pendingDrop = null;
-    svg.style.cursor = "crosshair";
-    if (drop.kind === "opcode") {
-      dropOpcodeHere(drop.opcode, drop.args, p.x, p.y);
-    } else if (drop.kind === "primitive") {
-      dropPrimitiveHere(drop.id, drop.values, p.x, p.y);
+    if (state.pendingDrop) {
+      const p = toPaper(svgPoint(svg, e));
+      const drop = state.pendingDrop;
+      state.pendingDrop = null;
+      svg.style.cursor = "crosshair";
+      if (drop.kind === "opcode") {
+        dropOpcodeHere(drop.opcode, drop.args, p.x, p.y);
+      } else if (drop.kind === "primitive") {
+        dropPrimitiveHere(drop.id, drop.values, p.x, p.y);
+      } else {
+        const slug = typeof drop === "string" ? drop : drop.slug;
+        dropLibraryHere(slug, p.x, p.y);
+      }
+      return;
+    }
+    // v0.7: no pending drop → treat as a selection click. Walk up the
+    // DOM from the actual target to find the nearest ancestor tagged
+    // with data-statement-id. If none, clear selection.
+    const wrapper = e.target.closest("[data-statement-id]");
+    if (wrapper) {
+      const id = parseInt(wrapper.getAttribute("data-statement-id"), 10);
+      if (Number.isFinite(id)) selectStatementById(id, e.shiftKey);
     } else {
-      // Legacy shape (bare slug) is still supported
-      const slug = typeof drop === "string" ? drop : drop.slug;
-      dropLibraryHere(slug, p.x, p.y);
+      selectStatementById(null, false);
     }
   };
+}
+
+// v0.7 selection helpers — single source of truth = state.selectedIds.
+// The statements list, canvas SVG, and Edit Selected panel all read from
+// this set. Any mutation must call `applySelectionHighlights()`.
+function selectStatementById(id, additive) {
+  if (id === null || id === undefined) {
+    state.selectedIds.clear();
+  } else if (additive) {
+    if (state.selectedIds.has(id)) state.selectedIds.delete(id);
+    else state.selectedIds.add(id);
+  } else {
+    state.selectedIds.clear();
+    state.selectedIds.add(id);
+  }
+  applySelectionHighlights();
+  showEditPanel();
+}
+
+function applySelectionHighlights() {
+  // Statements list rows use data-id on .stmt-row
+  document.querySelectorAll("#stmt-list .stmt-row").forEach((el) => {
+    const rid = parseInt(el.dataset.id, 10);
+    el.classList.toggle("selected", state.selectedIds.has(rid));
+  });
+  // Canvas SVG wrappers
+  if (state.svg) {
+    state.svg.querySelectorAll("[data-statement-id]").forEach((el) => {
+      const rid = parseInt(el.getAttribute("data-statement-id"), 10);
+      const sel = state.selectedIds.has(rid);
+      // Halo: bump stroke-width and add a colored outline via CSS filter.
+      // Cheap and works without a second render pass.
+      if (sel) {
+        el.setAttribute("data-selected", "true");
+      } else {
+        el.removeAttribute("data-selected");
+      }
+    });
+  }
 }
 
 function svgPoint(svg, evt) {
@@ -182,15 +237,9 @@ function renderStatementList() {
     row.addEventListener("click", (e) => {
       if (e.target.dataset.del) return;
       const id = parseInt(row.dataset.id);
-      if (e.shiftKey) {
-        // range from last selected to this
-        if (state.selectedIds.has(id)) state.selectedIds.delete(id);
-        else state.selectedIds.add(id);
-      } else {
-        state.selectedIds = new Set([id]);
-      }
-      renderStatementList();
-      showEditPanel();
+      // v0.7: route through the shared selection helper so the canvas SVG,
+      // statements list, and Edit Selected panel stay in sync.
+      selectStatementById(id, e.shiftKey);
     });
   });
   el.querySelectorAll("[data-del]").forEach((btn) => {
@@ -1248,5 +1297,132 @@ async function dropOpcodeHere(opcode, args, x, y) {
   fresh.addEventListener("click", () => {
     if (_modalOpcode) return _onPlaceClickOpcode();
     if (_modalPrim) return _onPlaceClick();
+  });
+})();
+
+
+// --------------------------------------------------------------------------
+// v0.7 floating cursor bubble
+//
+// A compact readout that follows the mouse whenever there is at least one
+// selected canvas statement. Shows: current paper coordinates, the
+// selected statement's opcode+args, and the transform buttons. Restored
+// from commit 74de1c7 but wired to the new bidirectional selection
+// model (state.selectedIds is the single source of truth).
+//
+// Design notes:
+// - The bubble is a plain fixed-positioned DOM node, not an SVG overlay.
+//   That keeps it independent of the drawing viewBox and lets us reuse
+//   normal HTML buttons.
+// - We hide it when no statement is selected. Multi-select shows a
+//   summary ("3 selected") in the info line.
+// - Buttons dispatch to the same transform actions the sidebar toolbar
+//   uses; no separate code path.
+// --------------------------------------------------------------------------
+
+(function _wireCursorBubble() {
+  const bubble = document.getElementById("cursor-bubble");
+  if (!bubble) return;
+  const cbCoord = document.getElementById("cb-coord");
+  const cbInfo = document.getElementById("cb-info");
+  let lastMouseX = 0;
+  let lastMouseY = 0;
+
+  function updatePosition() {
+    // Offset a little from the pointer so it doesn't cover the click target.
+    const pad = 16;
+    let x = lastMouseX + pad;
+    let y = lastMouseY + pad;
+    // Keep on-screen.
+    const rect = bubble.getBoundingClientRect();
+    if (x + rect.width > window.innerWidth - 8) x = lastMouseX - rect.width - pad;
+    if (y + rect.height > window.innerHeight - 8) y = lastMouseY - rect.height - pad;
+    bubble.style.left = `${Math.max(4, x)}px`;
+    bubble.style.top = `${Math.max(4, y)}px`;
+  }
+
+  function updateContent(paperX, paperY) {
+    cbCoord.textContent = `x: ${Math.round(paperX)}  y: ${Math.round(paperY)}`;
+    const ids = [...state.selectedIds];
+    if (ids.length === 0) {
+      cbInfo.textContent = "";
+      return;
+    }
+    if (ids.length === 1) {
+      const s = state.statements.find((x) => x.id === ids[0]);
+      cbInfo.textContent = s ? `${s.opcode},${s.args}` : "";
+    } else {
+      cbInfo.textContent = `${ids.length} statements selected`;
+    }
+  }
+
+  function shouldShow() {
+    return state.selectedIds && state.selectedIds.size > 0;
+  }
+
+  document.addEventListener("mousemove", (e) => {
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    // If the mouse is inside the bubble itself, don't move it — keep it
+    // stable so the user can click its buttons.
+    if (bubble.contains(e.target)) return;
+    if (!shouldShow()) {
+      bubble.style.display = "none";
+      return;
+    }
+    // Convert the client point to paper coords using the current SVG.
+    let px = 0;
+    let py = 0;
+    if (state.svg) {
+      try {
+        const p = svgPoint(state.svg, e);
+        px = p.x;
+        py = -p.y;
+      } catch { /* out of svg */ }
+    }
+    updateContent(px, py);
+    bubble.style.display = "";
+    updatePosition();
+  });
+
+  // React to selection changes even if the mouse is still. Hook the
+  // shared apply function.
+  const _origApply = window.applySelectionHighlights || applySelectionHighlights;
+  window.applySelectionHighlights = function () {
+    _origApply();
+    if (!shouldShow()) bubble.style.display = "none";
+    else {
+      updateContent(0, 0);
+      bubble.style.display = "";
+      updatePosition();
+    }
+  };
+
+  // Wire the transform buttons — dispatch identical to the sidebar toolbar.
+  bubble.querySelectorAll("button[data-act]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const act = btn.dataset.act;
+      try {
+        if (act === "rot-ccw") await rotateSelection(90);
+        else if (act === "rot-cw") await rotateSelection(-90);
+        else if (act === "rot-180") await rotateSelection(180);
+        else if (act === "mir-h") await mirrorSelection("h");
+        else if (act === "mir-v") await mirrorSelection("v");
+        else if (act === "dup") await duplicateSelection();
+        else if (act === "copy") await copySelectionAsDrawlang();
+        else if (act === "del") {
+          const ids = [...state.selectedIds];
+          for (const id of ids) {
+            await api(`/api/canvases/${state.currentCanvas}/statements/${id}`,
+                      { method: "DELETE" });
+          }
+          state.selectedIds = new Set();
+          await reloadStatements();
+        }
+      } catch (err) {
+        alert(`${act} failed: ${err.message}`);
+      }
+    });
   });
 })();

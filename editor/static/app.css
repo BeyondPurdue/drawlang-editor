@@ -367,3 +367,58 @@ html, body {
   .editor-pane { grid-column: 2; grid-row: 1; }
   .sidebar { grid-column: 1; grid-row: 1 / span 2; }
 }
+
+/* v0.7 bidirectional selection */
+#svg-host svg [data-statement-id][data-selected="true"] {
+  outline: 2px solid #01696f;
+  outline-offset: 2px;
+}
+#svg-host svg [data-statement-id][data-selected="true"] > * {
+  stroke: #01696f !important;
+  stroke-width: 2 !important;
+}
+#stmt-list .stmt-row.selected {
+  background: #f0f7f8;
+  border-left: 3px solid #01696f;
+}
+
+/* v0.7 cursor bubble — floating readout + transform buttons following the mouse
+   whenever there is at least one selected canvas statement. */
+.cursor-bubble {
+  position: fixed;
+  z-index: 1000;
+  background: #ffffff;
+  border: 1px solid #d4d1ca;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  padding: 6px 8px;
+  font-size: 11px;
+  color: #28251d;
+  pointer-events: auto;
+  user-select: none;
+  min-width: 160px;
+}
+.cursor-bubble .cb-coord {
+  font-family: ui-monospace,Menlo,Consolas,monospace;
+  color: #7a7974;
+}
+.cursor-bubble .cb-info {
+  font-family: ui-monospace,Menlo,Consolas,monospace;
+  color: #01696f;
+  margin: 4px 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cursor-bubble .cb-buttons {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+.cursor-bubble .cb-buttons button {
+  width: 24px; height: 22px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+}
