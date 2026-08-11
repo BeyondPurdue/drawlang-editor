@@ -1,0 +1,5 @@
+{
+  "source": "BM Global A3 v3 (28x14 perfect-square grid)",
+  "description": "Drawlang-native A3 landscape frame with a 28-column x 14-row perfect-square grid (cells = 1080/28 = 38.5714 drawlang units). Row labels A..N run top-to-bottom on both left and right edges; column labels 1..28 sit on the top edge. Bottom-left origin (drawlang v0.6). Title block at the bottom spans the full inner width. Editable fields are populated via the frame-values API; the drawlang source is the single source of truth.",
+  "fields": []
+}
