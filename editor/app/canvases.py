@@ -276,3 +276,218 @@ __all__ = [
     "get_canvas_program",
     "delete_canvas",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Step 4: statement write API
+# ---------------------------------------------------------------------------
+
+def _touch_canvas(c: sqlite3.Connection, canvas_id: int, now: float) -> None:
+    c.execute("UPDATE canvases SET updated_at = ? WHERE id = ?", (now, canvas_id))
+
+
+def append_statements(
+    id_or_slug: str | int,
+    statements: list[dict],
+) -> list[dict]:
+    """
+    Append one or more statements to a canvas. Each item is {opcode, args, group_id?}.
+    Assigns seq = current max + 1, +2, ...
+    """
+    row = _resolve_canvas_row(id_or_slug)
+    if row is None:
+        raise KeyError("canvas not found")
+    canvas_id = row[0]
+    now = time.time()
+    inserted_ids: list[int] = []
+    with _lock:
+        c = _conn()
+        c.execute("BEGIN;")
+        try:
+            max_seq_row = c.execute(
+                "SELECT COALESCE(MAX(seq), -1) FROM statements WHERE canvas_id = ?",
+                (canvas_id,),
+            ).fetchone()
+            next_seq = (max_seq_row[0] if max_seq_row else -1) + 1
+            for s in statements:
+                op = s["opcode"]
+                args = s.get("args", "")
+                group_id = s.get("group_id")
+                cur = c.execute(
+                    "INSERT INTO statements (canvas_id, seq, opcode, args, "
+                    "group_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (canvas_id, next_seq, op, args, group_id, now),
+                )
+                inserted_ids.append(cur.lastrowid)
+                next_seq += 1
+            _touch_canvas(c, canvas_id, now)
+            c.execute("COMMIT;")
+        except Exception:
+            c.execute("ROLLBACK;")
+            raise
+    return _fetch_statements_by_ids(inserted_ids)
+
+
+def append_program(id_or_slug: str | int, program: str) -> list[dict]:
+    """Append a raw drawlang program to a canvas, one row per statement."""
+    pairs = parse_program(program)
+    return append_statements(
+        id_or_slug,
+        [{"opcode": op, "args": args} for op, args in pairs],
+    )
+
+
+def update_statement(
+    id_or_slug: str | int, statement_id: int, patch: dict
+) -> dict | None:
+    """Update opcode / args / group_id on a single statement."""
+    row = _resolve_canvas_row(id_or_slug)
+    if row is None:
+        return None
+    canvas_id = row[0]
+    now = time.time()
+    with _lock:
+        c = _conn()
+        existing = c.execute(
+            "SELECT id, seq, opcode, args, group_id FROM statements "
+            "WHERE id = ? AND canvas_id = ?",
+            (statement_id, canvas_id),
+        ).fetchone()
+        if existing is None:
+            return None
+        new_opcode = patch.get("opcode", existing[2])
+        new_args = patch.get("args", existing[3])
+        new_group = patch.get("group_id", existing[4])
+        c.execute("BEGIN;")
+        try:
+            c.execute(
+                "UPDATE statements SET opcode = ?, args = ?, group_id = ? "
+                "WHERE id = ?",
+                (new_opcode, new_args, new_group, statement_id),
+            )
+            _touch_canvas(c, canvas_id, now)
+            c.execute("COMMIT;")
+        except Exception:
+            c.execute("ROLLBACK;")
+            raise
+    return _fetch_statements_by_ids([statement_id])[0]
+
+
+def delete_statement(id_or_slug: str | int, statement_id: int) -> bool:
+    """Delete one statement. Does NOT compact the seq numbers of the rest."""
+    row = _resolve_canvas_row(id_or_slug)
+    if row is None:
+        return False
+    canvas_id = row[0]
+    now = time.time()
+    with _lock:
+        c = _conn()
+        c.execute("BEGIN;")
+        try:
+            cur = c.execute(
+                "DELETE FROM statements WHERE id = ? AND canvas_id = ?",
+                (statement_id, canvas_id),
+            )
+            if cur.rowcount == 0:
+                c.execute("ROLLBACK;")
+                return False
+            _touch_canvas(c, canvas_id, now)
+            c.execute("COMMIT;")
+        except Exception:
+            c.execute("ROLLBACK;")
+            raise
+    return True
+
+
+def reorder_statements(
+    id_or_slug: str | int, order: list[int]
+) -> bool:
+    """
+    Reassign seq numbers based on the given ordered list of statement ids.
+    Any statement id not in `order` gets moved to the end in its current
+    relative order. Ids that don't belong to this canvas are ignored.
+    """
+    row = _resolve_canvas_row(id_or_slug)
+    if row is None:
+        return False
+    canvas_id = row[0]
+    now = time.time()
+    with _lock:
+        c = _conn()
+        c.execute("BEGIN;")
+        try:
+            all_ids = [
+                r[0] for r in c.execute(
+                    "SELECT id FROM statements WHERE canvas_id = ? ORDER BY seq ASC",
+                    (canvas_id,),
+                ).fetchall()
+            ]
+            id_set = set(all_ids)
+            new_order = [i for i in order if i in id_set]
+            leftovers = [i for i in all_ids if i not in set(new_order)]
+            final = new_order + leftovers
+            for seq, sid in enumerate(final):
+                c.execute(
+                    "UPDATE statements SET seq = ? WHERE id = ?",
+                    (seq, sid),
+                )
+            _touch_canvas(c, canvas_id, now)
+            c.execute("COMMIT;")
+        except Exception:
+            c.execute("ROLLBACK;")
+            raise
+    return True
+
+
+def replace_program(id_or_slug: str | int, program: str) -> dict | None:
+    """Delete all statements on a canvas and repopulate from a raw program."""
+    row = _resolve_canvas_row(id_or_slug)
+    if row is None:
+        return None
+    canvas_id = row[0]
+    now = time.time()
+    pairs = parse_program(program)
+    with _lock:
+        c = _conn()
+        c.execute("BEGIN;")
+        try:
+            c.execute("DELETE FROM statements WHERE canvas_id = ?", (canvas_id,))
+            for seq, (op, args) in enumerate(pairs):
+                c.execute(
+                    "INSERT INTO statements (canvas_id, seq, opcode, args, "
+                    "group_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (canvas_id, seq, op, args, None, now),
+                )
+            _touch_canvas(c, canvas_id, now)
+            c.execute("COMMIT;")
+        except Exception:
+            c.execute("ROLLBACK;")
+            raise
+    return get_canvas(id_or_slug)
+
+
+def _fetch_statements_by_ids(ids: list[int]) -> list[dict]:
+    if not ids:
+        return []
+    placeholders = ",".join("?" for _ in ids)
+    with _lock:
+        c = _conn()
+        rows = c.execute(
+            f"SELECT id, seq, opcode, args, group_id FROM statements "
+            f"WHERE id IN ({placeholders}) ORDER BY seq ASC",
+            ids,
+        ).fetchall()
+    return [
+        {"id": r[0], "seq": r[1], "opcode": r[2], "args": r[3], "group_id": r[4]}
+        for r in rows
+    ]
+
+
+__all__ += [
+    "append_statements",
+    "append_program",
+    "update_statement",
+    "delete_statement",
+    "reorder_statements",
+    "replace_program",
+]

@@ -39,6 +39,7 @@ from app.import_library import (  # noqa: E402
 )
 from app import storage  # noqa: E402
 from app import canvases as _canvases  # noqa: E402
+from app import library as _library  # noqa: E402
 
 
 app = FastAPI(title="Drawing Language Editor", version=SPEC_VERSION)
@@ -54,6 +55,7 @@ app.add_middleware(
 def _init_storage() -> None:
     storage.init()
     _canvases.init()
+    _library.init()
     # Sweep any pre-DB filesystem drawings into the DB, once.
     legacy = Path(__file__).resolve().parent.parent / "user_drawings"
     imported = storage.import_legacy_files(legacy)
@@ -128,6 +130,16 @@ class RenderResponse(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
     return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+
+
+@app.get("/canvas-editor", response_class=HTMLResponse)
+def canvas_editor_page() -> HTMLResponse:
+    return HTMLResponse((STATIC_DIR / "canvas-editor.html").read_text(encoding="utf-8"))
+
+
+@app.get("/library", response_class=HTMLResponse)
+def library_page() -> HTMLResponse:
+    return HTMLResponse((STATIC_DIR / "library.html").read_text(encoding="utf-8"))
 
 
 @app.get("/frames-editor", response_class=HTMLResponse)
@@ -688,3 +700,206 @@ def api_canvases_delete(id_or_slug: str) -> dict:
     if not ok:
         raise HTTPException(status_code=404, detail="canvas not found")
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Step 4: statement-write endpoints
+# ---------------------------------------------------------------------------
+
+class StatementItem(BaseModel):
+    opcode: str
+    args: str = ""
+    group_id: str | None = None
+
+
+class StatementAppendRequest(BaseModel):
+    statements: list[StatementItem] | None = None
+    program: str | None = None
+
+
+class StatementPatchRequest(BaseModel):
+    opcode: str | None = None
+    args: str | None = None
+    group_id: str | None = None
+
+
+class ReorderRequest(BaseModel):
+    order: list[int]
+
+
+class ReplaceProgramRequest(BaseModel):
+    program: str
+
+
+@app.post("/api/canvases/{id_or_slug}/statements")
+def api_statements_append(id_or_slug: str, req: StatementAppendRequest) -> dict:
+    """Append statements (list) or raw program text to a canvas."""
+    try:
+        if req.program is not None:
+            inserted = _canvases.append_program(id_or_slug, req.program)
+        elif req.statements is not None:
+            inserted = _canvases.append_statements(
+                id_or_slug,
+                [s.dict() for s in req.statements],
+            )
+        else:
+            raise HTTPException(status_code=400, detail="statements or program required")
+    except KeyError:
+        raise HTTPException(status_code=404, detail="canvas not found")
+    return {"ok": True, "inserted": inserted}
+
+
+@app.patch("/api/canvases/{id_or_slug}/statements/{statement_id}")
+def api_statement_patch(
+    id_or_slug: str, statement_id: int, req: StatementPatchRequest
+) -> dict:
+    """Update one statement's opcode/args/group_id."""
+    patch = {k: v for k, v in req.dict().items() if v is not None}
+    updated = _canvases.update_statement(id_or_slug, statement_id, patch)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="canvas or statement not found")
+    return {"ok": True, "statement": updated}
+
+
+@app.delete("/api/canvases/{id_or_slug}/statements/{statement_id}")
+def api_statement_delete(id_or_slug: str, statement_id: int) -> dict:
+    ok = _canvases.delete_statement(id_or_slug, statement_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="canvas or statement not found")
+    return {"ok": True}
+
+
+@app.post("/api/canvases/{id_or_slug}/statements/reorder")
+def api_statements_reorder(id_or_slug: str, req: ReorderRequest) -> dict:
+    ok = _canvases.reorder_statements(id_or_slug, req.order)
+    if not ok:
+        raise HTTPException(status_code=404, detail="canvas not found")
+    return {"ok": True}
+
+
+@app.put("/api/canvases/{id_or_slug}/program")
+def api_replace_program(id_or_slug: str, req: ReplaceProgramRequest) -> dict:
+    data = _canvases.replace_program(id_or_slug, req.program)
+    if data is None:
+        raise HTTPException(status_code=404, detail="canvas not found")
+    return {"ok": True, **data}
+
+
+# ---------------------------------------------------------------------------
+# Step 5: Library CRUD API + Step 8: drop-on-canvas
+# ---------------------------------------------------------------------------
+
+
+class LibraryCreateRequest(BaseModel):
+    name: str
+    program: str
+    category: str = "symbol"
+    description: str = ""
+    anchor_x: float = 0.0
+    anchor_y: float = 0.0
+    slug: str | None = None
+
+
+class LibraryPatchRequest(BaseModel):
+    name: str | None = None
+    program: str | None = None
+    category: str | None = None
+    description: str | None = None
+    anchor_x: float | None = None
+    anchor_y: float | None = None
+
+
+class LibraryDropRequest(BaseModel):
+    x: float
+    y: float
+    group_id: str | None = None
+
+
+@app.get("/api/library")
+def api_library_list(category: str | None = None) -> dict:
+    return {"items": _library.list_items(category=category)}
+
+
+@app.post("/api/library")
+def api_library_create(req: LibraryCreateRequest) -> dict:
+    try:
+        item = _library.create_item(
+            name=req.name, program=req.program, category=req.category,
+            description=req.description, anchor_x=req.anchor_x,
+            anchor_y=req.anchor_y, slug=req.slug,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {"ok": True, "item": item}
+
+
+@app.get("/api/library/{id_or_slug}")
+def api_library_get(id_or_slug: str) -> dict:
+    item = _library.get_item(id_or_slug)
+    if item is None:
+        raise HTTPException(status_code=404, detail="library item not found")
+    return item
+
+
+@app.patch("/api/library/{id_or_slug}")
+def api_library_patch(id_or_slug: str, req: LibraryPatchRequest) -> dict:
+    item = _library.update_item(id_or_slug, req.dict())
+    if item is None:
+        raise HTTPException(status_code=404, detail="library item not found")
+    return {"ok": True, "item": item}
+
+
+@app.delete("/api/library/{id_or_slug}")
+def api_library_delete(id_or_slug: str) -> dict:
+    ok = _library.delete_item(id_or_slug)
+    if not ok:
+        raise HTTPException(status_code=404, detail="library item not found")
+    return {"ok": True}
+
+
+@app.post("/api/library/{id_or_slug}/drop/{canvas_slug}")
+def api_library_drop(
+    id_or_slug: str, canvas_slug: str, req: LibraryDropRequest
+) -> dict:
+    """Drop a library item onto a canvas at (x,y). Appends statements."""
+    try:
+        inserted = _library.drop_on_canvas(
+            id_or_slug, canvas_slug, req.x, req.y, group_id=req.group_id
+        )
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"ok": True, "inserted": inserted}
+
+
+# ---------------------------------------------------------------------------
+# Step 9: Voice / natural-language input
+# ---------------------------------------------------------------------------
+
+from app import nlp as _nlp  # noqa: E402
+
+
+class NLPRequest(BaseModel):
+    text: str
+    canvas_id: str | None = None  # if set, statements are appended there
+
+
+@app.post("/api/nlp/translate")
+def api_nlp_translate(req: NLPRequest) -> dict:
+    """Translate natural-language text into drawlang statements.
+
+    If `canvas_id` is supplied, the translated statements are appended
+    to that canvas and the inserted rows are returned. Otherwise the
+    translated text is returned without side effects.
+    """
+    try:
+        stmts = _nlp.translate_command(req.text)
+    except _nlp.NLPError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    program = "\n".join(stmts)
+    if req.canvas_id:
+        try:
+            inserted = _canvases.append_program(req.canvas_id, program)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="canvas not found")
+        return {"ok": True, "program": program, "inserted": inserted}
+    return {"ok": True, "program": program, "statements": stmts}

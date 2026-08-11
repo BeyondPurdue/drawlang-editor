@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Canvas Editor — Beyond Purdue</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/static/app.css" />
+<style>
+  body { margin: 0; font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f7f6f2; color: #28251d; }
+  .app { display: grid; grid-template-columns: 260px 1fr 320px; grid-template-rows: 48px 1fr; height: 100vh; }
+  header { grid-column: 1/-1; display: flex; align-items: center; padding: 0 16px; background: #fff; border-bottom: 1px solid #d4d1ca; gap: 12px; }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+  header .spacer { flex: 1; }
+  header select, header button, header input[type="text"] {
+    font: inherit; padding: 6px 10px; border: 1px solid #d4d1ca; background: #fff; border-radius: 4px;
+  }
+  header button { cursor: pointer; }
+  header button.primary { background: #01696f; color: #fff; border-color: #01696f; }
+  header button.primary:hover { background: #0c4e54; }
+  .sidebar { background: #fbfbf9; border-right: 1px solid #d4d1ca; overflow: auto; padding: 12px; }
+  .sidebar h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; margin: 12px 0 6px; color: #7a7974; }
+  .sidebar h2:first-child { margin-top: 0; }
+  .lib-item { padding: 6px 8px; border-radius: 4px; cursor: grab; border: 1px solid transparent; }
+  .lib-item:hover { background: #f0efe9; border-color: #d4d1ca; }
+  .lib-item .lname { font-weight: 500; }
+  .lib-item .ldesc { font-size: 12px; color: #7a7974; }
+  .canvas-area { position: relative; overflow: auto; background: #eeece5; padding: 20px; }
+  .canvas-frame { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin: 0 auto; }
+  .rightpanel { background: #fbfbf9; border-left: 1px solid #d4d1ca; overflow: auto; padding: 12px; }
+  .rightpanel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; margin: 12px 0 6px; color: #7a7974; }
+  .rightpanel h2:first-child { margin-top: 0; }
+  .stmt-list { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; max-height: 40vh; overflow: auto; border: 1px solid #d4d1ca; background: #fff; border-radius: 4px; padding: 8px; }
+  .stmt-row { display: flex; gap: 6px; padding: 2px 4px; border-radius: 3px; cursor: pointer; }
+  .stmt-row:hover { background: #f0efe9; }
+  .stmt-row.selected { background: #d9edf0; }
+  .stmt-seq { color: #7a7974; width: 32px; text-align: right; }
+  .stmt-op { color: #01696f; font-weight: 600; width: 24px; }
+  .stmt-args { flex: 1; color: #28251d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stmt-del { color: #a12c7b; cursor: pointer; opacity: 0; }
+  .stmt-row:hover .stmt-del { opacity: 1; }
+  .cmd-input { display: flex; gap: 4px; margin-top: 8px; }
+  .cmd-input input { flex: 1; font: 12px ui-monospace, Menlo, Consolas, monospace; padding: 6px; border: 1px solid #d4d1ca; border-radius: 4px; }
+  .cmd-input button { padding: 6px 12px; }
+  .status { font-size: 12px; color: #7a7974; padding: 8px 0; }
+  .status.err { color: #a12c7b; }
+  .status.ok { color: #437a22; }
+  #svg-host svg { display: block; }
+  #svg-host { cursor: crosshair; }
+  .coord-hud { position: fixed; bottom: 8px; left: 12px; background: rgba(0,0,0,.7); color: #fff; padding: 4px 8px; border-radius: 3px; font: 12px ui-monospace, monospace; z-index: 10; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Canvas editor</h1>
+    <select id="canvas-select"><option value="">— choose canvas —</option></select>
+    <button id="new-canvas-btn">New</button>
+    <input type="text" id="canvas-rename" placeholder="Rename…" style="width:160px" />
+    <div class="spacer"></div>
+    <button id="render-btn" class="primary">Render</button>
+    <a href="/frames-editor" style="color:#01696f">Frames editor</a>
+  </header>
+
+  <aside class="sidebar" id="library-panel">
+    <h2>Library</h2>
+    <div id="library-list"></div>
+    <h2>Save selection as symbol</h2>
+    <input type="text" id="save-symbol-name" placeholder="Symbol name" style="width:100%;margin-bottom:4px" />
+    <button id="save-symbol-btn" style="width:100%">Save selection</button>
+    <div class="status" id="lib-status"></div>
+  </aside>
+
+  <main class="canvas-area">
+    <div id="svg-host"></div>
+    <div class="coord-hud" id="coord-hud">x: — y: —</div>
+  </main>
+
+  <aside class="rightpanel">
+    <h2>Statements</h2>
+    <div id="stmt-list" class="stmt-list"></div>
+    <div class="cmd-input">
+      <input type="text" id="cmd-input" placeholder="e.g. mr,20,0 or 'move right 20'" />
+      <button id="cmd-add">Append</button>
+      <button id="mic-btn" title="Voice input">🎤</button>
+    </div>
+    <div class="status" id="stmt-status"></div>
+    <div style="font-size:11px;color:#7a7974;margin-top:4px">
+      Try: <code>move right 20</code>, <code>line down 30</code>, <code>rect 100 50</code>, <code>text 0 hello</code>
+    </div>
+
+    <h2>Edit selected</h2>
+    <div id="edit-panel">
+      <div class="status">Click a statement above to edit.</div>
+    </div>
+  </aside>
+</div>
+
+<script src="/static/canvas-editor.js"></script>
+</body>
+</html>
