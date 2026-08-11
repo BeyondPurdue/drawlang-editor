@@ -1,0 +1,11 @@
+{
+  "id": "rect",
+  "name": "Rectangle",
+  "category": "shape",
+  "description": "Axis-aligned rectangle drawn at the current pen position.",
+  "params": [
+    {"name": "w", "label": "Width",  "type": "number", "default": 100, "min": 1},
+    {"name": "h", "label": "Height", "type": "number", "default": 60,  "min": 1}
+  ],
+  "template": "rt,{{w}},{{h}};"
+}

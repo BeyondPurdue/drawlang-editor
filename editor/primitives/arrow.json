@@ -1,0 +1,17 @@
+{
+  "id": "arrow",
+  "name": "Arrow",
+  "category": "connector",
+  "description": "Straight arrow of given length pointing right; head is a small V.",
+  "params": [
+    {"name": "length", "label": "Length",     "type": "number", "default": 60, "min": 5},
+    {"name": "head",   "label": "Head size",  "type": "number", "default": 8,  "min": 2, "max": 30}
+  ],
+  "compute": {
+    "back_x": "-head",
+    "back_y_up": "head / 2",
+    "back_y_dn": "-head",
+    "back_x_return": "head"
+  },
+  "template": "dl,{{length}},0;\ndl,{{back_x}},{{back_y_up}};\ndl,0,{{back_y_dn}};\ndl,{{back_x_return}},{{back_y_up}};"
+}

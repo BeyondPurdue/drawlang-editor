@@ -8,6 +8,10 @@ const state = {
   statements: [],
   selectedIds: new Set(),    // for multi-select
   library: [],
+  primitives: [],
+  activeTab: "primitives",   // sidebar tab: 'primitives' | 'symbols'
+  // pendingDrop: null | {kind: 'symbol', slug} | {kind: 'primitive', id, values}
+  pendingDrop: null,
   svg: null,
   vbox: null,                // viewBox as [x,y,w,h]
 };
@@ -117,9 +121,16 @@ function hookSvgEvents(svg) {
   host.onclick = (e) => {
     if (!state.pendingDrop) return;
     const p = toPaper(svgPoint(svg, e));
-    dropLibraryHere(state.pendingDrop, p.x, p.y);
+    const drop = state.pendingDrop;
     state.pendingDrop = null;
     svg.style.cursor = "crosshair";
+    if (drop.kind === "primitive") {
+      dropPrimitiveHere(drop.id, drop.values, p.x, p.y);
+    } else {
+      // Legacy shape (bare slug) is still supported
+      const slug = typeof drop === "string" ? drop : drop.slug;
+      dropLibraryHere(slug, p.x, p.y);
+    }
   };
 }
 
@@ -656,7 +667,7 @@ async function refreshLibrary() {
   ).join("");
   list.querySelectorAll(".lib-item").forEach((el) => {
     el.addEventListener("click", () => {
-      state.pendingDrop = el.dataset.slug;
+      state.pendingDrop = { kind: "symbol", slug: el.dataset.slug };
       $("lib-status").textContent = `Click on canvas to place "${el.dataset.slug}"`;
       $("lib-status").className = "status ok";
       if (state.svg) state.svg.style.cursor = "copy";
@@ -804,4 +815,250 @@ $("import-file").addEventListener("change", async (e) => {
   await loadFrameList();
   await refreshCanvasList();
   await refreshLibrary();
+  await refreshPrimitives();
+})();
+
+// --------------------------------------------------------------------------
+// Primitives (parametric library backed by editor/primitives/*.json)
+// --------------------------------------------------------------------------
+
+// Fetch the catalog once at startup; the list rarely changes at runtime.
+async function refreshPrimitives() {
+  try {
+    const data = await api("/api/primitives");
+    state.primitives = data.primitives || [];
+  } catch (e) {
+    state.primitives = [];
+  }
+  renderPrimitivesList();
+}
+
+function renderPrimitivesList() {
+  const list = $("primitives-list");
+  if (!list) return;
+  if (!state.primitives.length) {
+    list.innerHTML = '<div style="color:#7a7974;font-size:12px">No primitives loaded.</div>';
+    return;
+  }
+  // Group by category
+  const byCat = {};
+  for (const p of state.primitives) {
+    const c = p.category || "misc";
+    (byCat[c] = byCat[c] || []).push(p);
+  }
+  const cats = Object.keys(byCat).sort();
+  list.innerHTML = cats.map((c) => `
+    <div class="prim-cat">${c}</div>
+    ${byCat[c].map((p) =>
+      `<div class="lib-item" data-prim-id="${p.id}" title="${escapeAttr(p.description || "")}">
+        <div class="lname">${p.name}</div>
+        <div class="ldesc">${p.params.length} param${p.params.length === 1 ? "" : "s"}</div>
+      </div>`
+    ).join("")}
+  `).join("");
+  list.querySelectorAll(".lib-item[data-prim-id]").forEach((el) => {
+    el.addEventListener("click", () => openPrimitiveModal(el.dataset.primId));
+  });
+}
+
+// ---- tab switching ----
+function setSidebarTab(tab) {
+  state.activeTab = tab;
+  document.querySelectorAll(".lib-tab").forEach((el) => {
+    el.classList.toggle("active", el.dataset.tab === tab);
+  });
+  $("primitives-list").style.display = tab === "primitives" ? "" : "none";
+  $("library-list").style.display = tab === "symbols" ? "" : "none";
+}
+
+// ---- modal ----
+
+let _modalPrim = null;         // {id, name, description, params, template...}
+let _modalPreviewTimer = null;
+
+async function openPrimitiveModal(primId) {
+  try {
+    const { primitive } = await api(`/api/primitives/${primId}`);
+    _modalPrim = primitive;
+  } catch (e) {
+    alert("Load primitive failed: " + e.message);
+    return;
+  }
+  $("prim-modal-title").textContent = _modalPrim.name || primId;
+  $("prim-modal-desc").textContent = _modalPrim.description || "";
+  _renderModalForm(_modalPrim);
+  _schedulePreview();
+  $("prim-modal").classList.add("open");
+}
+
+function closePrimitiveModal() {
+  $("prim-modal").classList.remove("open");
+  _modalPrim = null;
+  $("prim-modal-preview").innerHTML = '<div style="color:#7a7974;font-size:12px">Preview</div>';
+}
+
+function _renderModalForm(prim) {
+  const form = $("prim-modal-form");
+  if (!prim.params || !prim.params.length) {
+    form.innerHTML = '<div style="color:#7a7974;font-size:12px">No parameters.</div>';
+    return;
+  }
+  form.innerHTML = prim.params.map((p) => {
+    const id = `prim-p-${p.name}`;
+    const def = p.default ?? "";
+    if (p.type === "select") {
+      const opts = (p.options || []).map((o) =>
+        `<option value="${escapeAttr(o)}"${o === p.default ? " selected" : ""}>${o}</option>`
+      ).join("");
+      return `<div class="form-row">
+        <label for="${id}">${p.label || p.name}</label>
+        <select id="${id}" data-name="${p.name}" data-type="select">${opts}</select>
+      </div>`;
+    }
+    if (p.type === "boolean") {
+      return `<div class="form-row">
+        <label for="${id}">${p.label || p.name}</label>
+        <input id="${id}" data-name="${p.name}" data-type="boolean" type="checkbox"${p.default ? " checked" : ""} />
+      </div>`;
+    }
+    const numAttrs = p.type === "number"
+      ? ` step="1"${p.min != null ? ` min="${p.min}"` : ""}${p.max != null ? ` max="${p.max}"` : ""}`
+      : "";
+    const inputType = p.type === "number" ? "number" : "text";
+    return `<div class="form-row">
+      <label for="${id}">${p.label || p.name}</label>
+      <input id="${id}" data-name="${p.name}" data-type="${p.type || "text"}"
+             type="${inputType}" value="${escapeAttr(String(def))}"${numAttrs} />
+    </div>`;
+  }).join("");
+  // Debounced preview on any input change
+  form.querySelectorAll("input, select").forEach((el) => {
+    el.addEventListener("input", _schedulePreview);
+    el.addEventListener("change", _schedulePreview);
+  });
+}
+
+function _collectFormValues() {
+  const out = {};
+  document.querySelectorAll("#prim-modal-form [data-name]").forEach((el) => {
+    const name = el.dataset.name;
+    const type = el.dataset.type;
+    if (type === "number") {
+      const v = el.value;
+      if (v !== "") out[name] = Number(v);
+    } else if (type === "boolean") {
+      out[name] = el.checked;
+    } else {
+      out[name] = el.value;
+    }
+  });
+  return out;
+}
+
+function _schedulePreview() {
+  if (_modalPreviewTimer) clearTimeout(_modalPreviewTimer);
+  _modalPreviewTimer = setTimeout(_renderModalPreview, 250);
+}
+
+async function _renderModalPreview() {
+  if (!_modalPrim) return;
+  const values = _collectFormValues();
+  const preview = $("prim-modal-preview");
+  try {
+    // Expand: params -> drawlang
+    const expand = await api(`/api/primitives/${_modalPrim.id}/expand`, {
+      method: "POST",
+      body: JSON.stringify({ values }),
+    });
+    // Render: drawlang -> SVG (via canvas render, using a scratch canvas
+    // would create a canvas per keystroke; we render via the render helper
+    // that accepts raw program text).
+    const svg = await _renderProgramToSvg(expand.drawlang);
+    preview.innerHTML = svg || '<div style="color:#a12c7b;font-size:12px">No output</div>';
+  } catch (e) {
+    preview.innerHTML = `<div style="color:#a12c7b;font-size:12px">${escapeAttr(e.message)}</div>`;
+  }
+}
+
+// Render a bare drawlang program to SVG via a scratch endpoint. We use the
+// same /export/pdf machinery in reverse? — no; call a lightweight render
+// helper. Since no such endpoint exists yet, we use a scratch canvas.
+async function _renderProgramToSvg(program) {
+  // Use the existing scratch-render endpoint if available.
+  try {
+    const r = await fetch("/render", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ program, backend: "svg" }),
+    });
+    if (r.ok) {
+      const data = await r.json();
+      if (data.ok && data.output) return data.output;
+      if (data.error) return `<div style="color:#a12c7b;font-size:12px">${data.error}</div>`;
+    }
+  } catch (e) { /* fallthrough */ }
+  return "";
+}
+
+// Place button: sets pendingDrop and closes the modal. User clicks canvas
+// to complete the drop at a chosen position (matches library-item flow).
+function _onPlaceClick() {
+  if (!_modalPrim) return;
+  const values = _collectFormValues();
+  state.pendingDrop = { kind: "primitive", id: _modalPrim.id, values };
+  $("lib-status").textContent = `Click on canvas to place "${_modalPrim.name}"`;
+  $("lib-status").className = "status ok";
+  if (state.svg) state.svg.style.cursor = "copy";
+  closePrimitiveModal();
+}
+
+// Actually drop a primitive at (x, y). Expands server-side, then appends
+// as ``ma,x,y; <template>`` in one program POST so the primitive lands at
+// the click position.
+async function dropPrimitiveHere(primId, values, x, y) {
+  if (!state.currentCanvas) return alert("Choose a canvas first");
+  try {
+    const expand = await api(`/api/primitives/${primId}/expand`, {
+      method: "POST",
+      body: JSON.stringify({ values }),
+    });
+    // Move-absolute to the click, then run the expanded program.
+    const program = `ma,${Math.round(x)},${Math.round(y)};\n${expand.drawlang}`;
+    await api(`/api/canvases/${state.currentCanvas}/statements`, {
+      method: "POST",
+      body: JSON.stringify({ program }),
+    });
+    // Attach the meaning_tag to the LAST inserted ma statement (the anchor).
+    // Fetch fresh statements, find the ma we just inserted, PATCH it.
+    await reloadStatements();
+    const after = state.statements.sort((a, b) => a.seq - b.seq);
+    const anchor = [...after].reverse()
+      .find((s) => s.opcode === "ma" && s.args === `${Math.round(x)},${Math.round(y)}`);
+    if (anchor) {
+      await api(`/api/canvases/${state.currentCanvas}/statements/${anchor.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ meaning_tag: expand.meaning_tag }),
+      });
+      await reloadStatements();
+    }
+    $("lib-status").textContent = `Dropped "${primId}" at (${Math.round(x)},${Math.round(y)})`;
+    $("lib-status").className = "status ok";
+  } catch (e) {
+    $("lib-status").textContent = e.message;
+    $("lib-status").className = "status err";
+  }
+}
+
+// Wire modal buttons + tab switching once at load.
+(function _wirePrimitivesUi() {
+  document.querySelectorAll(".lib-tab").forEach((el) => {
+    el.addEventListener("click", () => setSidebarTab(el.dataset.tab));
+  });
+  $("prim-modal-close").addEventListener("click", closePrimitiveModal);
+  $("prim-modal-cancel").addEventListener("click", closePrimitiveModal);
+  $("prim-modal-place").addEventListener("click", _onPlaceClick);
+  // Backdrop click closes the modal (but not clicks inside .modal)
+  $("prim-modal").addEventListener("click", (e) => {
+    if (e.target.id === "prim-modal") closePrimitiveModal();
+  });
 })();

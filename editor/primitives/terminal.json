@@ -1,0 +1,17 @@
+{
+  "id": "terminal",
+  "name": "Terminal",
+  "category": "component",
+  "description": "A labelled terminal: rectangle with a name centred above it.",
+  "params": [
+    {"name": "w",    "label": "Width",  "type": "number", "default": 60,  "min": 5},
+    {"name": "h",    "label": "Height", "type": "number", "default": 20,  "min": 5},
+    {"name": "size", "label": "Label size", "type": "number", "default": 10, "min": 4, "max": 48},
+    {"name": "name", "label": "Terminal name", "type": "text", "default": "T1"}
+  ],
+  "compute": {
+    "label_x": "w / 2 - size * len(name) / 4",
+    "label_y": "-4"
+  },
+  "template": "rt,{{w}},{{h}};\nmr,{{label_x}},{{label_y}};\ntx,{{size}},{{name}};"
+}

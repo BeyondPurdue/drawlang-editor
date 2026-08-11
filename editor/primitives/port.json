@@ -1,0 +1,13 @@
+{
+  "id": "port",
+  "name": "Port",
+  "category": "component",
+  "description": "A small numbered port square. Side controls where the label sits.",
+  "params": [
+    {"name": "size",  "label": "Square size",  "type": "number", "default": 10, "min": 4, "max": 40},
+    {"name": "index", "label": "Port number",  "type": "number", "default": 1,  "min": 0},
+    {"name": "side",  "label": "Label side",   "type": "select", "default": "right",
+     "options": ["right", "left", "top", "bottom"]}
+  ],
+  "template": "rt,{{size}},{{size}};"
+}

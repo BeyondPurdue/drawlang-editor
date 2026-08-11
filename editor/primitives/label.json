@@ -1,0 +1,11 @@
+{
+  "id": "label",
+  "name": "Label",
+  "category": "text",
+  "description": "A single text label at the current pen position.",
+  "params": [
+    {"name": "size", "label": "Text size", "type": "number", "default": 12, "min": 4, "max": 96},
+    {"name": "text", "label": "Text",      "type": "text",   "default": "Label"}
+  ],
+  "template": "tx,{{size}},{{text}};"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "router_symbol",
+  "name": "Router / switch symbol",
+  "category": "component",
+  "description": "A filled rectangle with a model + KKS block label. Matches the SCALANCE-style block used in Paiton drawings.",
+  "params": [
+    {"name": "w",     "label": "Width",  "type": "number", "default": 140, "min": 40},
+    {"name": "h",     "label": "Height", "type": "number", "default": 80,  "min": 30},
+    {"name": "size",  "label": "Label size", "type": "number", "default": 10, "min": 4, "max": 32},
+    {"name": "model", "label": "Model",  "type": "text", "default": "SCALANCE XR324"},
+    {"name": "kks",   "label": "KKS tag","type": "text", "default": "0 0CRR01 GN101"}
+  ],
+  "compute": {
+    "label1_x": "6",
+    "label1_y": "h - size - 6",
+    "label2_x": "6",
+    "label2_y": "h - 2 * size - 10"
+  },
+  "template": "rt,{{w}},{{h}};\nmr,{{label1_x}},{{label1_y}};\ntx,{{size}},{{model}};\nmr,{{label2_x}},{{label2_y}};\ntx,{{size}},{{kks}};"
+}

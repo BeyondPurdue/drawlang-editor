@@ -1,0 +1,10 @@
+{
+  "id": "circle",
+  "name": "Circle",
+  "category": "shape",
+  "description": "Circle centred at the current pen position.",
+  "params": [
+    {"name": "r", "label": "Radius", "type": "number", "default": 20, "min": 1}
+  ],
+  "template": "ci,{{r}};"
+}

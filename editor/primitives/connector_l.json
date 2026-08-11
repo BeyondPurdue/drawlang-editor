@@ -1,0 +1,16 @@
+{
+  "id": "connector_l",
+  "name": "L connector",
+  "category": "connector",
+  "description": "Two-segment L-shaped connector: horizontal then vertical (or vice versa).",
+  "params": [
+    {"name": "dx",    "label": "Horizontal delta", "type": "number", "default": 80},
+    {"name": "dy",    "label": "Vertical delta",   "type": "number", "default": 40},
+    {"name": "order", "label": "Order", "type": "select", "default": "h-then-v",
+     "options": ["h-then-v", "v-then-h"]}
+  ],
+  "template_variants": {
+    "h-then-v": "dl,{{dx}},0;\ndl,0,{{dy}};",
+    "v-then-h": "dl,0,{{dy}};\ndl,{{dx}},0;"
+  }
+}

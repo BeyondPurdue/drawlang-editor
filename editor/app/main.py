@@ -970,3 +970,47 @@ def api_nlp_translate(req: NLPRequest) -> dict:
             raise HTTPException(status_code=404, detail="canvas not found")
         return {"ok": True, "program": program, "inserted": inserted}
     return {"ok": True, "program": program, "statements": stmts}
+
+
+# ---------------------------------------------------------------------------
+# Primitives catalog
+# ---------------------------------------------------------------------------
+
+from app import primitives as _primitives  # noqa: E402
+
+
+class PrimitiveExpandRequest(BaseModel):
+    values: dict = {}
+
+
+@app.get("/api/primitives")
+def api_primitives_list() -> dict:
+    """List all primitives (light payload — no template)."""
+    return {"ok": True, "primitives": _primitives.list_primitives()}
+
+
+@app.get("/api/primitives/{prim_id}")
+def api_primitives_get(prim_id: str) -> dict:
+    """Return one primitive's full definition (incl. template)."""
+    p = _primitives.get_primitive(prim_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="primitive not found")
+    return {"ok": True, "primitive": p}
+
+
+@app.post("/api/primitives/{prim_id}/expand")
+def api_primitives_expand(prim_id: str, req: PrimitiveExpandRequest) -> dict:
+    """Expand a primitive with user-supplied params into drawlang.
+
+    Returns ``{drawlang, meaning_tag}``. The client typically POSTs
+    ``drawlang`` into ``/api/canvases/{slug}/statements`` with
+    ``meaning_tag`` attached to the first inserted statement.
+    """
+    p = _primitives.get_primitive(prim_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="primitive not found")
+    try:
+        drawlang, tag = _primitives.expand(p, req.values or {})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "drawlang": drawlang, "meaning_tag": tag}
