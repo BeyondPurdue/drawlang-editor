@@ -9,6 +9,7 @@ const state = {
   selectedIds: new Set(),    // for multi-select
   library: [],
   primitives: [],
+  opcodes: [],
   activeTab: "primitives",   // sidebar tab: 'primitives' | 'symbols'
   // pendingDrop: null | {kind: 'symbol', slug} | {kind: 'primitive', id, values}
   pendingDrop: null,
@@ -124,7 +125,9 @@ function hookSvgEvents(svg) {
     const drop = state.pendingDrop;
     state.pendingDrop = null;
     svg.style.cursor = "crosshair";
-    if (drop.kind === "primitive") {
+    if (drop.kind === "opcode") {
+      dropOpcodeHere(drop.opcode, drop.args, p.x, p.y);
+    } else if (drop.kind === "primitive") {
       dropPrimitiveHere(drop.id, drop.values, p.x, p.y);
     } else {
       // Legacy shape (bare slug) is still supported
@@ -816,6 +819,7 @@ $("import-file").addEventListener("change", async (e) => {
   await refreshCanvasList();
   await refreshLibrary();
   await refreshPrimitives();
+  await refreshOpcodes();
 })();
 
 // --------------------------------------------------------------------------
@@ -862,18 +866,25 @@ function renderPrimitivesList() {
 }
 
 // ---- tab switching ----
+//
+// v0.7: Primitives = pure v0.6 opcodes from /api/opcodes. Symbols = a
+// two-section panel: composed parametric shapes (the pre-v0.7 8 JSON
+// entries) + user-saved symbols from /api/library. The invented shapes
+// are labelled 'demo' because they were placeholder content, not a
+// curated symbol catalog.
 function setSidebarTab(tab) {
   state.activeTab = tab;
   document.querySelectorAll(".lib-tab").forEach((el) => {
     el.classList.toggle("active", el.dataset.tab === tab);
   });
-  $("primitives-list").style.display = tab === "primitives" ? "" : "none";
-  $("library-list").style.display = tab === "symbols" ? "" : "none";
+  $("opcodes-list").style.display = tab === "primitives" ? "" : "none";
+  $("symbols-panel").style.display = tab === "symbols" ? "" : "none";
 }
 
 // ---- modal ----
 
 let _modalPrim = null;         // {id, name, description, params, template...}
+let _modalOpcode = null;       // v0.7: currently-loaded opcode entry, if any
 let _modalPreviewTimer = null;
 
 async function openPrimitiveModal(primId) {
@@ -894,6 +905,7 @@ async function openPrimitiveModal(primId) {
 function closePrimitiveModal() {
   $("prim-modal").classList.remove("open");
   _modalPrim = null;
+  _modalOpcode = null;
   $("prim-modal-preview").innerHTML = '<div style="color:#7a7974;font-size:12px">Preview</div>';
 }
 
@@ -1060,5 +1072,181 @@ async function dropPrimitiveHere(primId, values, x, y) {
   // Backdrop click closes the modal (but not clicks inside .modal)
   $("prim-modal").addEventListener("click", (e) => {
     if (e.target.id === "prim-modal") closePrimitiveModal();
+  });
+})();
+
+
+// --------------------------------------------------------------------------
+// Opcodes — the REAL primitives (v0.7)
+//
+// The Primitives tab lists v0.6 opcodes directly, one editable row each.
+// No composition. No invented shapes. Clicking a row opens the arg form
+// pre-filled with the opcode's spec defaults; Place sets pendingDrop and
+// the next canvas click drops it as `<opcode>,<args>;` at that position.
+//
+// Rendered SVG elements get data-statement-id so we can round-trip clicks
+// back to the source row (see selection module below).
+// --------------------------------------------------------------------------
+
+async function refreshOpcodes() {
+  try {
+    const data = await api("/api/opcodes");
+    state.opcodes = data.opcodes || [];
+  } catch (e) {
+    state.opcodes = [];
+  }
+  renderOpcodesList();
+}
+
+function renderOpcodesList() {
+  const list = $("opcodes-list");
+  if (!list) return;
+  if (!state.opcodes.length) {
+    list.innerHTML = '<div style="color:#7a7974;font-size:12px">No opcodes loaded.</div>';
+    return;
+  }
+  // Group by 'core' vs 'extension' — mirrors spec §6 vs §7.
+  const byGroup = { core: [], extension: [] };
+  for (const op of state.opcodes) (byGroup[op.group] || byGroup.core).push(op);
+  const label = { core: "Core (§6)", extension: "Extensions (§7)" };
+  const html = ["core", "extension"].map((g) => {
+    if (!byGroup[g].length) return "";
+    return `<div class="prim-cat">${label[g]}</div>${
+      byGroup[g].map((op) =>
+        `<div class="lib-item" data-opcode="${op.opcode}" title="${escapeAttr(op.description || "")}">
+          <div class="lname"><code>${op.opcode}</code> — ${op.name}</div>
+          <div class="ldesc">${op.args.map(a => a.name).join(", ")}</div>
+        </div>`
+      ).join("")
+    }`;
+  }).join("");
+  list.innerHTML = html;
+  list.querySelectorAll(".lib-item[data-opcode]").forEach((el) => {
+    el.addEventListener("click", () => openOpcodeModal(el.dataset.opcode));
+  });
+}
+
+// Reuse the primitive modal chrome for opcodes — same form layout, same
+// preview logic; the only difference is that placement bypasses /expand
+// and posts a raw `<opcode>,<args>;` statement. `_modalOpcode` is
+// declared above (near `_modalPrim`).
+
+async function openOpcodeModal(opcode) {
+  try {
+    const d = await api(`/api/opcodes/${opcode}`);
+    _modalOpcode = d.opcode;
+  } catch (e) {
+    alert("Load opcode failed: " + e.message);
+    return;
+  }
+  _modalPrim = null;  // ensure primitive-modal state doesn't leak in
+  $("prim-modal-title").textContent = `${_modalOpcode.opcode} — ${_modalOpcode.name}`;
+  $("prim-modal-desc").textContent = _modalOpcode.description || "";
+  _renderOpcodeForm(_modalOpcode);
+  _scheduleOpcodePreview();
+  $("prim-modal").classList.add("open");
+}
+
+function _renderOpcodeForm(op) {
+  const form = $("prim-modal-form");
+  form.innerHTML = op.args.map((a) => {
+    const id = `op-arg-${a.name}`;
+    const isText = a.type === "text";
+    const inputType = isText ? "text" : "number";
+    return `<div class="form-row">
+      <label for="${id}">${a.name}</label>
+      <input id="${id}" data-name="${a.name}" data-type="${a.type}"
+             type="${inputType}" value="${escapeAttr(String(a.default))}" />
+    </div>`;
+  }).join("");
+  form.querySelectorAll("input").forEach((el) => {
+    el.addEventListener("input", _scheduleOpcodePreview);
+  });
+}
+
+function _collectOpcodeArgs() {
+  const out = [];
+  document.querySelectorAll("#prim-modal-form [data-name]").forEach((el) => {
+    out.push({ name: el.dataset.name, type: el.dataset.type, value: el.value });
+  });
+  return out;
+}
+
+function _formatOpcodeStatement(opcode, args) {
+  // Emit args in declared order. Integers stringify verbatim; text passes
+  // through untouched (grammar allows unquoted text at the last position
+  // of tx / po; if a spec revision tightens that, quote here.)
+  const parts = args.map(a => a.value);
+  return `${opcode},${parts.join(",")};`;
+}
+
+function _scheduleOpcodePreview() {
+  if (_modalPreviewTimer) clearTimeout(_modalPreviewTimer);
+  _modalPreviewTimer = setTimeout(_renderOpcodePreview, 250);
+}
+
+async function _renderOpcodePreview() {
+  if (!_modalOpcode) return;
+  const args = _collectOpcodeArgs();
+  // Prepend a `ma,0,0` so the pen is anchored to the preview origin,
+  // regardless of what the opcode does.
+  const program = `ma,0,0;\n${_formatOpcodeStatement(_modalOpcode.opcode, args)}`;
+  try {
+    const svg = await _renderProgramToSvg(program);
+    $("prim-modal-preview").innerHTML = svg ||
+      '<div style="color:#7a7974;font-size:12px">(no visible mark)</div>';
+  } catch (e) {
+    $("prim-modal-preview").innerHTML =
+      `<div style="color:#a12c7b;font-size:12px">${escapeAttr(e.message)}</div>`;
+  }
+}
+
+// (_modalOpcode declared with _modalPrim above)
+
+// Placement flow: Place button sets state.pendingDrop and closes the modal;
+// the next click on the canvas drops the statement at that paper coordinate.
+function _onPlaceClickOpcode() {
+  if (!_modalOpcode) return;
+  const args = _collectOpcodeArgs();
+  state.pendingDrop = { kind: "opcode", opcode: _modalOpcode.opcode, args };
+  $("lib-status").textContent = `Click on canvas to place "${_modalOpcode.opcode}"`;
+  $("lib-status").className = "status ok";
+  if (state.svg) state.svg.style.cursor = "copy";
+  closePrimitiveModal();
+}
+
+async function dropOpcodeHere(opcode, args, x, y) {
+  if (!state.currentCanvas) return alert("Choose a canvas first");
+  // Some opcodes are pen moves in their own right (ma sets absolute pen
+  // position). We always anchor the drop by inserting a ma,x,y first so
+  // the semantics of the placed opcode start from the click point.
+  const stmt = _formatOpcodeStatement(opcode, args);
+  const program = `ma,${Math.round(x)},${Math.round(y)};\n${stmt}`;
+  try {
+    await api(`/api/canvases/${state.currentCanvas}/statements`, {
+      method: "POST",
+      body: JSON.stringify({ program }),
+    });
+    await reloadStatements();
+    $("lib-status").textContent =
+      `Placed ${opcode} at (${Math.round(x)},${Math.round(y)})`;
+    $("lib-status").className = "status ok";
+  } catch (e) {
+    $("lib-status").textContent = e.message;
+    $("lib-status").className = "status err";
+  }
+}
+
+// Overwrite the modal Place-button binding so it dispatches to the opcode
+// or primitive flow depending on which one populated the modal.
+(function _rewirePlaceButton() {
+  const btn = $("prim-modal-place");
+  if (!btn) return;
+  // Remove any previously-attached place handlers by replacing the node.
+  const fresh = btn.cloneNode(true);
+  btn.parentNode.replaceChild(fresh, btn);
+  fresh.addEventListener("click", () => {
+    if (_modalOpcode) return _onPlaceClickOpcode();
+    if (_modalPrim) return _onPlaceClick();
   });
 })();

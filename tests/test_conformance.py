@@ -33,7 +33,7 @@ from drawlang.backends.ps import PostScriptBackend
 
 def test_spec_version():
     """The interpreter targets spec v0.4."""
-    assert SPEC_VERSION == "0.6"
+    assert SPEC_VERSION == "0.7"
 
 
 # ---------------------------------------------------------------------------

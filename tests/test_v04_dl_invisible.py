@@ -24,8 +24,8 @@ from drawlang import parse, render, SPEC_VERSION, __version__
 
 class TestSpecVersion:
     def test_spec_version_is_v04(self) -> None:
-        assert SPEC_VERSION == "0.6"
-        assert __version__.startswith("0.6")
+        assert SPEC_VERSION == "0.7"
+        assert __version__.startswith("0.7")
 
 
 class TestDlInvisibleParses:

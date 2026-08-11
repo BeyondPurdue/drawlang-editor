@@ -32,8 +32,8 @@ from .parser import parse, Statement
 from .interpreter import interpret, PenState
 from .backend import Backend
 
-__version__ = "0.6.0"
-SPEC_VERSION = "0.6"
+__version__ = "0.7.0"
+SPEC_VERSION = "0.7"
 # v0.3: FLOAT type removed. All numeric args are INT (signed 16-bit).
 # v0.4: `dl` accepts the `i` (invisible) modifier, matching `rt` and `ci`.
 #        An invisible line advances the pen and contributes both endpoints to
@@ -57,6 +57,13 @@ SPEC_VERSION = "0.6"
 #        fill and is equivalent to bare `,f`; `,f,c<n>` with n≥1 fills with
 #        palette[n]. Grammar unchanged; interpreter unchanged; only backend
 #        colour resolution changed. See spec §5.3, §6.4, §6.5, §8.1, §14.
+# v0.7: Editor milestone — no opcode changes. The v0.6 language is FROZEN.
+#        Editor gains: (a) opcode-only Primitives menu (7 core + 4 extension
+#        opcodes exposed as editable rows), (b) bidirectional selection
+#        between rendered SVG elements and their source statements, (c)
+#        DB-backed editable Frames (no longer file-based), (d) invented
+#        parametric shapes moved to Symbols as 'demo' entries. Interpreter,
+#        parser, backends, and grammar are byte-for-byte identical to v0.6.
 # Literals with a decimal point are accepted and rounded half-toward-positive-
 # infinity to the nearest int. See spec §3.4.
 

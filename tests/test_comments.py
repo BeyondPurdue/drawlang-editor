@@ -22,7 +22,7 @@ from drawlang.errors import LexicalError
 
 def test_spec_version_is_02():
     # v0.3 introduced INT-only numerics; v0.4 (current) is additive on top of v0.3.
-    assert SPEC_VERSION == "0.6"
+    assert SPEC_VERSION == "0.7"
 
 
 class TestBasicComments:

@@ -100,7 +100,7 @@ def health() -> dict:
         "status": "ok",
         "spec_version": SPEC_VERSION,
         "drawlang_version": pkg_version,
-        "semantic_layer": "0.6.1",  # Chapter 16 additive appendix
+        "semantic_layer": "0.7.0",  # v0.7 editor milestone (language frozen at v0.6 grammar/opcodes)
         "git_sha": _GIT_SHA_CACHE,
     }
 
@@ -1014,3 +1014,30 @@ def api_primitives_expand(prim_id: str, req: PrimitiveExpandRequest) -> dict:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True, "drawlang": drawlang, "meaning_tag": tag}
+
+
+# ---------------------------------------------------------------------------
+# Opcode catalog (v0.7 editor Primitives tab)
+#
+# One editable row per v0.6 opcode. This is the FULL Primitives set:
+# nothing composed, nothing invented. See editor/app/opcodes.py.
+# ---------------------------------------------------------------------------
+
+from app import opcodes as _opcodes  # noqa: E402
+
+
+@app.get("/api/opcodes")
+def api_opcodes_list() -> dict:
+    """Return the v0.6 opcode catalog for the Primitives tab.
+
+    Response: {opcodes: [{opcode, name, group, description, spec_section, args:[...]}, ...]}
+    """
+    return {"ok": True, "opcodes": _opcodes.list_opcodes()}
+
+
+@app.get("/api/opcodes/{opcode}")
+def api_opcodes_get(opcode: str) -> dict:
+    op = _opcodes.get_opcode(opcode)
+    if op is None:
+        raise HTTPException(status_code=404, detail="opcode not found")
+    return {"ok": True, "opcode": op}

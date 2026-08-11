@@ -31,8 +31,8 @@ from drawlang import render
 
 
 def test_spec_version_is_06():
-    assert drawlang.SPEC_VERSION == "0.6"
-    assert drawlang.__version__.startswith("0.6")
+    assert drawlang.SPEC_VERSION == "0.7"
+    assert drawlang.__version__.startswith("0.7")
 
 
 # ---------------------------------------------------------------------------
