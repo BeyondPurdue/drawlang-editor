@@ -174,3 +174,67 @@ def test_seed_from_frame_source(temp_db):
     prog = canvases.get_canvas_program("a3-grid-copy")
     assert prog is not None
     assert canvases.parse_program(prog) == canvases.parse_program(frame_src)
+
+
+# ---------------------------------------------------------------------------
+# update_canvas
+# ---------------------------------------------------------------------------
+
+def test_update_canvas_rename(temp_db):
+    canvases = temp_db["canvases"]
+    canvases.create_canvas(name="Old name")
+    res = canvases.update_canvas("Old-name", name="New name")
+    assert res is not None
+    assert res["name"] == "New name"
+    # Slug is NOT changed automatically — rename preserves lookup.
+    assert res["slug"] == "Old-name"
+
+
+def test_update_canvas_slug(temp_db):
+    canvases = temp_db["canvases"]
+    canvases.create_canvas(name="A")
+    res = canvases.update_canvas("A", slug="a-renamed")
+    assert res is not None
+    assert res["slug"] == "a-renamed"
+    assert canvases.get_canvas("a-renamed") is not None
+    assert canvases.get_canvas("A") is None
+
+
+def test_update_canvas_slug_collision(temp_db):
+    canvases = temp_db["canvases"]
+    canvases.create_canvas(name="A")
+    canvases.create_canvas(name="B")
+    with pytest.raises(ValueError):
+        canvases.update_canvas("A", slug="B")
+
+
+def test_update_canvas_frame(temp_db):
+    canvases = temp_db["canvases"]
+    canvases.create_canvas(name="X", frame_id="a3-grid")
+    res = canvases.update_canvas("X", frame_id="a3-empty")
+    assert res["frame_id"] == "a3-empty"
+    # Empty string clears the frame.
+    res = canvases.update_canvas("X", frame_id="")
+    assert res["frame_id"] is None
+
+
+def test_update_canvas_preserves_omitted_fields(temp_db):
+    canvases = temp_db["canvases"]
+    canvases.create_canvas(name="Keep", frame_id="a3-grid")
+    res = canvases.update_canvas("Keep", name="Keep II")
+    assert res["name"] == "Keep II"
+    assert res["frame_id"] == "a3-grid"  # untouched
+    assert res["slug"] == "Keep"          # untouched
+
+
+def test_update_canvas_noop(temp_db):
+    canvases = temp_db["canvases"]
+    canvases.create_canvas(name="A")
+    res = canvases.update_canvas("A")
+    assert res is not None
+    assert res["name"] == "A"
+
+
+def test_update_canvas_not_found(temp_db):
+    canvases = temp_db["canvases"]
+    assert canvases.update_canvas("does-not-exist", name="X") is None

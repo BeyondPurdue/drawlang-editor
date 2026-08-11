@@ -285,6 +285,71 @@ def delete_canvas(id_or_slug: str | int) -> bool:
     return True
 
 
+def update_canvas(
+    id_or_slug: str | int,
+    *,
+    name: str | None = None,
+    slug: str | None = None,
+    frame_id: str | None = None,
+) -> dict | None:
+    """Patch a canvas's name / slug / frame_id.
+
+    Any argument left as None is preserved. To *clear* frame_id (turn a
+    framed canvas into a blank one) pass the sentinel string ``""`` — it
+    is stored as SQL NULL.
+
+    Returns the updated canvas dict, or None if the target does not exist.
+    Raises ValueError on slug collision with a different canvas.
+    """
+    row = _resolve_canvas_row(id_or_slug)
+    if row is None:
+        return None
+    canvas_id = row[0]
+
+    fields: list[str] = []
+    values: list[object] = []
+
+    if name is not None:
+        fields.append("name = ?")
+        values.append(name)
+
+    if slug is not None:
+        # Check for collision against a DIFFERENT canvas.
+        with _lock:
+            existing = _conn().execute(
+                "SELECT id FROM canvases WHERE slug = ? AND id != ?",
+                (slug, canvas_id),
+            ).fetchone()
+        if existing:
+            raise ValueError(f"canvas slug {slug!r} already exists")
+        fields.append("slug = ?")
+        values.append(slug)
+
+    if frame_id is not None:
+        fields.append("frame_id = ?")
+        # Empty string means "clear".
+        values.append(frame_id if frame_id != "" else None)
+
+    if not fields:
+        # No-op patch — still return the current row's metadata.
+        data = get_canvas(canvas_id)
+        return data["canvas"] if data else None
+
+    now = time.time()
+    fields.append("updated_at = ?")
+    values.append(now)
+    values.append(canvas_id)
+
+    with _lock:
+        c = _conn()
+        c.execute(
+            f"UPDATE canvases SET {', '.join(fields)} WHERE id = ?",
+            values,
+        )
+    data = get_canvas(canvas_id)
+    return data["canvas"] if data else None
+
+
 __all__ = [
     "init",
     "parse_program",
@@ -294,6 +359,7 @@ __all__ = [
     "get_canvas",
     "get_canvas_program",
     "delete_canvas",
+    "update_canvas",
 ]
 
 

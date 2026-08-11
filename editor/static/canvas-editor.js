@@ -81,25 +81,38 @@ function hookSvgEvents(svg) {
     const p = svgPoint(svg, e);
     $("coord-hud").textContent = `x: ${Math.round(p.x)}  y: ${Math.round(p.y)}`;
   });
-  svg.addEventListener("click", (e) => {
-    // If a library item is being dropped, place it here.
-    if (state.pendingDrop) {
-      const p = svgPoint(svg, e);
-      dropLibraryHere(state.pendingDrop, p.x, p.y);
-      state.pendingDrop = null;
-      svg.style.cursor = "crosshair";
-    }
-  });
+  // Attach to the host container so clicks always land, even on inner <g>
+  // elements where getScreenCTM() can be null.
+  const host = $("svg-host");
+  host.onclick = (e) => {
+    if (!state.pendingDrop) return;
+    const p = svgPoint(svg, e);
+    dropLibraryHere(state.pendingDrop, p.x, p.y);
+    state.pendingDrop = null;
+    svg.style.cursor = "crosshair";
+  };
 }
 
 function svgPoint(svg, evt) {
-  const pt = svg.createSVGPoint();
-  pt.x = evt.clientX;
-  pt.y = evt.clientY;
-  const ctm = svg.getScreenCTM();
-  if (!ctm) return { x: 0, y: 0 };
-  const inv = ctm.inverse();
-  return pt.matrixTransform(inv);
+  // Try native SVG matrix first.
+  try {
+    const pt = svg.createSVGPoint();
+    pt.x = evt.clientX;
+    pt.y = evt.clientY;
+    const ctm = svg.getScreenCTM();
+    if (ctm) {
+      const inv = ctm.inverse();
+      const p = pt.matrixTransform(inv);
+      if (isFinite(p.x) && isFinite(p.y)) return p;
+    }
+  } catch (_) { /* fall through */ }
+  // Fallback: manual viewBox math from bounding rect.
+  const rect = svg.getBoundingClientRect();
+  const vb = (svg.getAttribute("viewBox") || "0 0 1 1").split(/\s+/).map(Number);
+  const [vx, vy, vw, vh] = vb;
+  const x = vx + ((evt.clientX - rect.left) / rect.width) * vw;
+  const y = vy + ((evt.clientY - rect.top) / rect.height) * vh;
+  return { x, y };
 }
 
 // --------------------------------------------------------------------------
@@ -309,6 +322,32 @@ $("cmd-input").addEventListener("keydown", (e) => {
 // --------------------------------------------------------------------------
 $("canvas-select").addEventListener("change", async (e) => {
   await loadCanvas(e.target.value);
+});
+
+// Rename current canvas. Blur or Enter commits.
+async function commitRename() {
+  const el = $("canvas-rename");
+  const newName = el.value.trim();
+  if (!newName) { el.value = ""; return; }
+  if (!state.currentCanvas) { alert("Choose a canvas first"); el.value = ""; return; }
+  try {
+    const res = await api(`/api/canvases/${state.currentCanvas}${""}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: newName }),
+    });
+    el.value = "";
+    // Server may have kept the old slug; refresh the list either way.
+    const newSlug = res.canvas?.slug || state.currentCanvas;
+    await refreshCanvasList();
+    $("canvas-select").value = newSlug;
+    state.currentCanvas = newSlug;
+  } catch (e) {
+    alert(e.message);
+  }
+}
+$("canvas-rename").addEventListener("blur", commitRename);
+$("canvas-rename").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); commitRename(); }
 });
 $("new-canvas-btn").addEventListener("click", async () => {
   const name = prompt("Canvas name?");

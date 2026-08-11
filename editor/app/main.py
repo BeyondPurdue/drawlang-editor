@@ -130,6 +130,12 @@ class RenderResponse(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
+    # Canvas editor is the default landing page. Old v0.1 index lives at /legacy.
+    return HTMLResponse((STATIC_DIR / "canvas-editor.html").read_text(encoding="utf-8"))
+
+
+@app.get("/legacy", response_class=HTMLResponse)
+def legacy_index() -> HTMLResponse:
     return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
 
 
@@ -625,6 +631,12 @@ class CanvasCreateRequest(BaseModel):
     slug: str | None = None
 
 
+class CanvasPatchRequest(BaseModel):
+    name: str | None = None
+    slug: str | None = None
+    frame_id: str | None = None
+
+
 @app.get("/api/canvases")
 def api_canvases_list() -> dict:
     """List all canvases with statement counts."""
@@ -701,6 +713,24 @@ def api_canvases_delete(id_or_slug: str) -> dict:
     if not ok:
         raise HTTPException(status_code=404, detail="canvas not found")
     return {"ok": True}
+
+
+@app.patch("/api/canvases/{id_or_slug}")
+def api_canvases_patch(id_or_slug: str, req: CanvasPatchRequest) -> dict:
+    """Rename a canvas, change its slug, or change its frame.
+
+    Omitted fields are preserved. Only fields explicitly present in the
+    request body are updated. To clear the frame, send frame_id as an
+    empty string.
+    """
+    payload = req.dict(exclude_unset=True)
+    try:
+        data = _canvases.update_canvas(id_or_slug, **payload)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if data is None:
+        raise HTTPException(status_code=404, detail="canvas not found")
+    return {"ok": True, "canvas": data}
 
 
 # ---------------------------------------------------------------------------
