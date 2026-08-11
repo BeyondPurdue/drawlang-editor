@@ -58,6 +58,12 @@ CREATE INDEX IF NOT EXISTS idx_statements_group
     ON statements(canvas_id, group_id);
 """
 
+# Additive migrations. Each entry is (column_name, DDL fragment). Runs after
+# SCHEMA and swallows the "duplicate column" error so init() stays idempotent.
+_MIGRATIONS = [
+    ("meaning_tag", "ALTER TABLE statements ADD COLUMN meaning_tag TEXT"),
+]
+
 
 _lock = threading.Lock()
 
@@ -68,9 +74,21 @@ def _conn() -> sqlite3.Connection:
 
 
 def init() -> None:
-    """Apply canvas schema on top of the drawings schema. Idempotent."""
+    """Apply canvas schema on top of the drawings schema. Idempotent.
+
+    Also applies any additive migrations (see `_MIGRATIONS`). We check for
+    the column first rather than catching the ALTER error so that a bad
+    migration doesn't get silently swallowed.
+    """
     with _lock:
-        _conn().executescript(SCHEMA)
+        c = _conn()
+        c.executescript(SCHEMA)
+        existing_cols = {
+            row[1] for row in c.execute("PRAGMA table_info(statements)").fetchall()
+        }
+        for col_name, ddl in _MIGRATIONS:
+            if col_name not in existing_cols:
+                c.execute(ddl)
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +238,7 @@ def get_canvas(id_or_slug: str | int) -> dict | None:
     with _lock:
         c = _conn()
         stmt_rows = c.execute(
-            "SELECT id, seq, opcode, args, group_id "
+            "SELECT id, seq, opcode, args, group_id, meaning_tag "
             "FROM statements WHERE canvas_id = ? ORDER BY seq ASC",
             (canvas_id,),
         ).fetchall()
@@ -240,6 +258,7 @@ def get_canvas(id_or_slug: str | int) -> dict | None:
                 "opcode": s[2],
                 "args": s[3],
                 "group_id": s[4],
+                "meaning_tag": s[5],
             }
             for s in stmt_rows
         ],
@@ -313,10 +332,12 @@ def append_statements(
                 op = s["opcode"]
                 args = s.get("args", "")
                 group_id = s.get("group_id")
+                meaning_tag = s.get("meaning_tag")
                 cur = c.execute(
                     "INSERT INTO statements (canvas_id, seq, opcode, args, "
-                    "group_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    (canvas_id, next_seq, op, args, group_id, now),
+                    "group_id, meaning_tag, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (canvas_id, next_seq, op, args, group_id, meaning_tag, now),
                 )
                 inserted_ids.append(cur.lastrowid)
                 next_seq += 1
@@ -349,7 +370,7 @@ def update_statement(
     with _lock:
         c = _conn()
         existing = c.execute(
-            "SELECT id, seq, opcode, args, group_id FROM statements "
+            "SELECT id, seq, opcode, args, group_id, meaning_tag FROM statements "
             "WHERE id = ? AND canvas_id = ?",
             (statement_id, canvas_id),
         ).fetchone()
@@ -358,12 +379,18 @@ def update_statement(
         new_opcode = patch.get("opcode", existing[2])
         new_args = patch.get("args", existing[3])
         new_group = patch.get("group_id", existing[4])
+        # meaning_tag is treated distinctly: an explicit None in the patch
+        # clears the tag; a missing key preserves the current value.
+        if "meaning_tag" in patch:
+            new_meaning = patch["meaning_tag"]
+        else:
+            new_meaning = existing[5]
         c.execute("BEGIN;")
         try:
             c.execute(
-                "UPDATE statements SET opcode = ?, args = ?, group_id = ? "
-                "WHERE id = ?",
-                (new_opcode, new_args, new_group, statement_id),
+                "UPDATE statements SET opcode = ?, args = ?, group_id = ?, "
+                "meaning_tag = ? WHERE id = ?",
+                (new_opcode, new_args, new_group, new_meaning, statement_id),
             )
             _touch_canvas(c, canvas_id, now)
             c.execute("COMMIT;")
@@ -473,14 +500,67 @@ def _fetch_statements_by_ids(ids: list[int]) -> list[dict]:
     with _lock:
         c = _conn()
         rows = c.execute(
-            f"SELECT id, seq, opcode, args, group_id FROM statements "
+            f"SELECT id, seq, opcode, args, group_id, meaning_tag FROM statements "
             f"WHERE id IN ({placeholders}) ORDER BY seq ASC",
             ids,
         ).fetchall()
     return [
-        {"id": r[0], "seq": r[1], "opcode": r[2], "args": r[3], "group_id": r[4]}
+        {
+            "id": r[0],
+            "seq": r[1],
+            "opcode": r[2],
+            "args": r[3],
+            "group_id": r[4],
+            "meaning_tag": r[5],
+        }
         for r in rows
     ]
+
+
+def list_statements_by_meaning(
+    id_or_slug: str | int, meaning_tag: str
+) -> list[dict]:
+    """Return all statements on a canvas that carry a given meaning_tag."""
+    row = _resolve_canvas_row(id_or_slug)
+    if row is None:
+        return []
+    canvas_id = row[0]
+    with _lock:
+        c = _conn()
+        rows = c.execute(
+            "SELECT id, seq, opcode, args, group_id, meaning_tag "
+            "FROM statements WHERE canvas_id = ? AND meaning_tag = ? "
+            "ORDER BY seq ASC",
+            (canvas_id, meaning_tag),
+        ).fetchall()
+    return [
+        {
+            "id": r[0],
+            "seq": r[1],
+            "opcode": r[2],
+            "args": r[3],
+            "group_id": r[4],
+            "meaning_tag": r[5],
+        }
+        for r in rows
+    ]
+
+
+def list_meaning_index(id_or_slug: str | int) -> list[dict]:
+    """Return the distinct meaning_tag values on a canvas + statement counts."""
+    row = _resolve_canvas_row(id_or_slug)
+    if row is None:
+        return []
+    canvas_id = row[0]
+    with _lock:
+        c = _conn()
+        rows = c.execute(
+            "SELECT meaning_tag, COUNT(*) FROM statements "
+            "WHERE canvas_id = ? AND meaning_tag IS NOT NULL "
+            "GROUP BY meaning_tag ORDER BY meaning_tag ASC",
+            (canvas_id,),
+        ).fetchall()
+    return [{"meaning_tag": r[0], "count": r[1]} for r in rows]
 
 
 __all__ += [
@@ -490,4 +570,6 @@ __all__ += [
     "delete_statement",
     "reorder_statements",
     "replace_program",
+    "list_statements_by_meaning",
+    "list_meaning_index",
 ]

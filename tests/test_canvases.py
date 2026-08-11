@@ -106,6 +106,7 @@ def test_create_and_get_canvas(temp_db):
         "opcode": "mr",
         "args": "14,0",
         "group_id": None,
+        "meaning_tag": None,
     }
 
 

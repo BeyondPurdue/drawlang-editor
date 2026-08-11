@@ -100,6 +100,7 @@ def health() -> dict:
         "status": "ok",
         "spec_version": SPEC_VERSION,
         "drawlang_version": pkg_version,
+        "semantic_layer": "0.6.1",  # Chapter 16 additive appendix
         "git_sha": _GIT_SHA_CACHE,
     }
 
@@ -710,6 +711,7 @@ class StatementItem(BaseModel):
     opcode: str
     args: str = ""
     group_id: str | None = None
+    meaning_tag: str | None = None
 
 
 class StatementAppendRequest(BaseModel):
@@ -721,6 +723,7 @@ class StatementPatchRequest(BaseModel):
     opcode: str | None = None
     args: str | None = None
     group_id: str | None = None
+    meaning_tag: str | None = None
 
 
 class ReorderRequest(BaseModel):
@@ -753,8 +756,14 @@ def api_statements_append(id_or_slug: str, req: StatementAppendRequest) -> dict:
 def api_statement_patch(
     id_or_slug: str, statement_id: int, req: StatementPatchRequest
 ) -> dict:
-    """Update one statement's opcode/args/group_id."""
-    patch = {k: v for k, v in req.dict().items() if v is not None}
+    """Update one statement's opcode/args/group_id/meaning_tag.
+
+    A field that is present in the JSON body but null clears the current
+    value; a field that is missing preserves it. This matters most for
+    `meaning_tag` — clients need a way to remove a tag.
+    """
+    # Pydantic v1: exclude_unset keeps the None-vs-missing distinction.
+    patch = req.dict(exclude_unset=True)
     updated = _canvases.update_statement(id_or_slug, statement_id, patch)
     if updated is None:
         raise HTTPException(status_code=404, detail="canvas or statement not found")
@@ -783,6 +792,34 @@ def api_replace_program(id_or_slug: str, req: ReplaceProgramRequest) -> dict:
     if data is None:
         raise HTTPException(status_code=404, detail="canvas not found")
     return {"ok": True, **data}
+
+
+# ---------------------------------------------------------------------------
+# Step 10: semantic layer (meaning tags)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/canvases/{id_or_slug}/meaning-index")
+def api_meaning_index(id_or_slug: str) -> dict:
+    """List distinct meaning tags on a canvas with statement counts."""
+    if _canvases.get_canvas(id_or_slug) is None:
+        raise HTTPException(status_code=404, detail="canvas not found")
+    return {"index": _canvases.list_meaning_index(id_or_slug)}
+
+
+@app.get("/api/canvases/{id_or_slug}/meaning/{meaning_tag:path}")
+def api_meaning_get(id_or_slug: str, meaning_tag: str) -> dict:
+    """Return every statement on a canvas that carries the given meaning tag.
+
+    The `:path` converter lets meaning tags contain slashes, so hierarchical
+    tags like `motor/pump-101/status` are addressable directly by URL.
+    """
+    if _canvases.get_canvas(id_or_slug) is None:
+        raise HTTPException(status_code=404, detail="canvas not found")
+    return {
+        "meaning_tag": meaning_tag,
+        "statements": _canvases.list_statements_by_meaning(id_or_slug, meaning_tag),
+    }
 
 
 # ---------------------------------------------------------------------------

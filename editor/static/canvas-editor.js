@@ -172,22 +172,61 @@ function showEditPanel() {
   }
   const stmt = state.statements.find((s) => s.id === ids[0]);
   if (!stmt) return;
+  const currentTag = stmt.meaning_tag ?? "";
   panel.innerHTML = `
     <label style="font-size:12px">Opcode</label>
     <input type="text" id="edit-op" value="${stmt.opcode}" style="width:100%;margin-bottom:6px" />
     <label style="font-size:12px">Args</label>
     <input type="text" id="edit-args" value="${escapeAttr(stmt.args)}" style="width:100%;margin-bottom:6px" />
+    <label style="font-size:12px">Meaning tag <span style="color:#7a7974">(optional)</span></label>
+    <input type="text" id="edit-meaning" value="${escapeAttr(currentTag)}" placeholder="e.g. motor/pump-101/body" style="width:100%;margin-bottom:6px" />
     <button id="edit-save" style="width:100%">Save</button>`;
   $("edit-save").addEventListener("click", async () => {
+    const newTag = $("edit-meaning").value.trim();
+    // Empty string → clear the tag (send explicit null so backend clears).
+    const body = {
+      opcode: $("edit-op").value.trim(),
+      args: $("edit-args").value,
+      meaning_tag: newTag === "" ? null : newTag,
+    };
     await api(`/api/canvases/${state.currentCanvas}/statements/${stmt.id}`, {
       method: "PATCH",
-      body: JSON.stringify({
-        opcode: $("edit-op").value.trim(),
-        args: $("edit-args").value,
-      }),
+      body: JSON.stringify(body),
     });
     await reloadStatements();
   });
+}
+
+async function renderMeaningIndex() {
+  const host = $("meaning-index");
+  if (!state.currentCanvas) {
+    host.innerHTML = '<div class="status">No canvas loaded.</div>';
+    return;
+  }
+  try {
+    const data = await api(`/api/canvases/${state.currentCanvas}/meaning-index`);
+    const items = data.index || [];
+    if (items.length === 0) {
+      host.innerHTML = '<div class="status">No meaning tags yet. Set one from the edit panel.</div>';
+      return;
+    }
+    host.innerHTML = items
+      .map((r) => `<div class="meaning-row" data-tag="${escapeAttr(r.meaning_tag)}" style="display:flex;justify-content:space-between;padding:2px 4px;cursor:pointer;border-radius:3px"><span style="color:#01696f;font-family:ui-monospace,Menlo,Consolas,monospace">${escapeAttr(r.meaning_tag)}</span><span style="color:#7a7974">${r.count}</span></div>`)
+      .join("");
+    host.querySelectorAll(".meaning-row").forEach((el) => {
+      el.addEventListener("click", async () => {
+        const tag = el.getAttribute("data-tag");
+        const res = await api(`/api/canvases/${state.currentCanvas}/meaning/${encodeURI(tag)}`);
+        state.selectedIds = new Set(res.statements.map((s) => s.id));
+        renderStatementList();
+        showEditPanel();
+      });
+      el.addEventListener("mouseenter", () => { el.style.background = "#f0efe9"; });
+      el.addEventListener("mouseleave", () => { el.style.background = ""; });
+    });
+  } catch (err) {
+    host.innerHTML = `<div class="status err">${err.message}</div>`;
+  }
 }
 
 function escapeAttr(s) {
@@ -202,6 +241,7 @@ async function reloadStatements() {
   showEditPanel();
   await renderCanvas();
   await refreshCanvasList();
+  await renderMeaningIndex();
 }
 
 // --------------------------------------------------------------------------

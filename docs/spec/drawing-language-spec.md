@@ -35,6 +35,7 @@
 13. [Compliance and Conformance](#13-compliance-and-conformance)
 14. [Versioning](#14-versioning)
 15. [Glossary](#15-glossary)
+16. [Semantic Layer — Meaning Tags](#16-semantic-layer--meaning-tags)
 
 ---
 
@@ -917,7 +918,140 @@ Interpreters SHOULD document which version of the specification they implement. 
 - **Rahmen.** The frame/border of a drawing sheet.
 - **Raster.** The grid of reference labels (A/B/C/D/E/F rows and 1/2/…/8 columns) along the border of a frame.
 - **Schriftfeld.** The title block on a drawing sheet, containing metadata (project, drawing number, revision, etc.).
+- **Meaning tag.** An optional semantic identifier attached to a statement (see Chapter 16). Not part of the drawlang program.
+- **Semantic layer.** The set of meaning tags attached to statements on a canvas; a projection over the drawing that gives it an application-level meaning.
 - **Statement.** One opcode plus its arguments and modifiers, terminated by a semicolon.
+
+---
+
+## 16. Semantic Layer — Meaning Tags
+
+**Status:** Additive appendix to v0.6. The core language of Chapters 3–15 is unchanged and remains locked. Chapter 16 defines an *optional* metadata layer that MAY be attached to statements without altering the language, the grammar, the interpreter, or the pen model.
+
+### 16.1 Motivation
+
+A drawlang program tells you where marks go. It does not tell you what those marks *mean*. A rectangle at (400, 300) could be a motor housing, a valve body, a tank cross-section, or the outline of a title block. The rectangle is the same rectangle.
+
+Every legacy control-system drawing system solved this the same wrong way: it embedded semantics inside geometry. Symbol libraries carried unofficial "this rectangle is a motor" conventions in their catalog metadata. Tag numbers were painted onto drawings as text and then re-parsed by third-party tools. When the drawing was exported, the meaning fell out.
+
+The drawlang answer is different: **semantics live beside statements, not inside them.**
+
+### 16.2 The `meaning_tag` field
+
+Every statement MAY carry an optional string called its **meaning tag**. The meaning tag is:
+
+- **Storage-level, not language-level.** It is stored on the statement row in the database. It is NOT part of the drawlang syntax and MUST NOT appear in a program string.
+- **Opaque to the interpreter.** The drawlang interpreter (Chapter 9) MUST NOT inspect or use the meaning tag. Rendered output is identical whether the tag is set or not.
+- **Free-form UTF-8 text.** Any Unicode string is legal. The system does not prescribe a syntax — that is the semantic-layer designer's job.
+- **Nullable.** A statement without a meaning tag has `meaning_tag = NULL`. Programs written against v0.6 continue to work unchanged; the tag simply stays null on every row.
+
+### 16.3 What a meaning tag is for
+
+A meaning tag identifies **the application-level role** a statement plays. Concrete examples:
+
+- A KKS or plant tag: `10HAG10AA001`
+- A hierarchical role: `motor/pump-101/housing`
+- A loop identity: `loop/T-401/measurement`
+- A UI role: `title-block/project-field`
+- A symbol group: `sym/valve-globe/body`
+
+One meaning tag typically covers several statements — the `mr`, `rt`, and `tx` rows that together draw one motor share the tag `motor/pump-101`. A canvas's set of distinct meaning tags is its **semantic index**.
+
+### 16.4 What a meaning tag is NOT for
+
+- **Not a drawing primitive.** Setting a tag does not change what is drawn. If a rendering differs because of a tag, the implementation is wrong.
+- **Not a symbol registry.** Symbol identity belongs in the library table (a symbol has a slug, a name, and a program). Meaning tags on a canvas are per-*occurrence*, not per-*symbol*.
+- **Not a coordinate.** Position information belongs in `ma`/`mr` args. A meaning tag identifies *what*, not *where*.
+- **Not a group_id substitute.** `group_id` is a program-mechanical grouping ("these statements were dropped together and can be moved as one"). A meaning tag is semantic ("these statements are all part of pump P-101"). They may or may not coincide.
+- **Not typed by the language.** There is no `motor/*` schema baked in. The semantic-layer designer picks the vocabulary; drawlang is agnostic.
+
+### 16.5 Storage
+
+Meaning tags live in a nullable column on the statement row:
+
+```sql
+ALTER TABLE statements ADD COLUMN meaning_tag TEXT;
+```
+
+That is the entire storage model. A statement row now looks like:
+
+| id | canvas_id | seq | opcode | args      | group_id | meaning_tag       |
+|----|-----------|-----|--------|-----------|----------|-------------------|
+| 1  | 42        | 0   | ma     | 400,300   | g-1      | motor/pump-101    |
+| 2  | 42        | 1   | rt     | 20,20     | g-1      | motor/pump-101    |
+| 3  | 42        | 2   | tx     | 0,P-101   | g-1      | label/pump-101    |
+| 4  | 42        | 3   | dl     | 100,0     | NULL     | NULL              |
+
+Rows 1–2 draw the motor housing and carry the motor tag. Row 3 draws the label and carries a *different* tag — same drop group, different meaning. Row 4 is a bare connection line with no assigned role.
+
+### 16.6 Behaviour under the drawlang round-trip
+
+A drawlang program string does not contain meaning tags. Therefore:
+
+- `program_from_statements(rows)` produces a string with no tag information. This is by design.
+- `parse_program(source)` produces statements with `meaning_tag = NULL`. This is by design.
+- **A round-trip through the program string DROPS the semantic layer.** A round-trip through the database preserves it.
+
+This is not a bug. The program string is the language; the semantic layer is metadata. Serialization of the semantic layer is a separate concern (JSON export, tag-aware backup format, meaning index file) and is not covered by this chapter.
+
+### 16.7 Access API
+
+A compliant implementation SHOULD expose:
+
+- **Read a statement's tag** — present on every statement fetch alongside `opcode` and `args`.
+- **Set / clear a statement's tag** — via the same patch operation that edits opcode and args. Setting to explicit null clears the tag; omitting the field preserves it.
+- **Enumerate the semantic index** — return the distinct meaning tags on a canvas plus a count of statements per tag.
+- **Fetch by tag** — return all statements on a canvas that carry a given meaning tag, in seq order.
+
+A reference implementation using FastAPI exposes:
+
+```
+GET  /api/canvases/{id}/meaning-index
+GET  /api/canvases/{id}/meaning/{tag}    # tag may contain slashes
+PATCH /api/canvases/{id}/statements/{sid}  {meaning_tag: "..."}
+```
+
+### 16.8 Namespacing convention (RECOMMENDED, not normative)
+
+The language does not prescribe a tag vocabulary. This section documents a convention that the reference editor uses; other applications MAY choose differently.
+
+We recommend hierarchical, slash-separated tags with three parts:
+
+```
+<domain>/<identity>/<role>
+```
+
+- `<domain>` — the semantic category: `motor`, `valve`, `sensor`, `pipe`, `loop`, `label`, `title-block`, `annotation`, `symbol`
+- `<identity>` — the plant-level identifier: `pump-101`, `T-401`, `10HAG10AA001`, or a stable UUID if no plant tag exists yet
+- `<role>` — optional, distinguishes multiple statement roles under one identity: `body`, `label`, `connector`, `measurement`
+
+Examples:
+
+```
+motor/pump-101/body
+motor/pump-101/label
+valve/HV-042/body
+loop/T-401/measurement
+label/T-401
+title-block/project-field
+```
+
+Unprefixed tags (`P-101`) are legal but discouraged — they collide fast and cannot be indexed by domain.
+
+### 16.9 Compliance
+
+An implementation is compliant with drawlang v0.6 whether or not it implements Chapter 16. A drawlang **program** is unaffected by Chapter 16; every v0.6 program is a valid Chapter-16 program with an empty semantic layer. An implementation that DOES implement Chapter 16 MUST:
+
+1. Preserve the value of `meaning_tag` across store / fetch cycles.
+2. NOT surface `meaning_tag` in the program string produced by `program_from_statements`.
+3. NOT interpret `meaning_tag` inside the drawlang interpreter (Chapter 9). The interpreter's output MUST be byte-identical whether `meaning_tag` is set or null.
+4. Support hierarchical tags containing slashes when exposing them over HTTP.
+
+### 16.10 Versioning
+
+Chapter 16 is v0.6.1 of the specification — an additive point release. The core language (Chapters 3–15) remains v0.6. This chapter does not introduce a new opcode, a new modifier, or any change to the grammar (Chapter 10) or the interpreter reference algorithm (Chapter 9). It is purely a data-layer addition.
+
+Future semantic-layer features (a dedicated meaning-index export format, meaning-driven queries in a semantic console, computed meaning inference from drawing shape) will each get their own additive point release. The core language stays locked.
 
 ---
 
