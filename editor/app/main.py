@@ -153,22 +153,57 @@ def render_program(req: RenderRequest) -> RenderResponse:
         )
 
 
+import re as _re_export
+
+
 @app.post("/export/pdf")
 def export_pdf(req: RenderRequest) -> Response:
-    """Render the program to PostScript, then convert to PDF via ps2pdf."""
+    """Render the program to PostScript, then convert to PDF via ps2pdf.
+
+    Sizes the PDF page to the actual %%BoundingBox from the PS output so
+    landscape frames (A3 ES680) don't get clipped by the default Letter page.
+    """
     try:
         ps = render(req.program, "ps")
     except DrawLangError as e:
         raise HTTPException(400, f"{type(e).__name__}: {e}")
 
+    # Parse %%BoundingBox to size the output page
+    bbox_m = _re_export.search(
+        r"%%BoundingBox:\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)",
+        ps,
+    )
+    if bbox_m:
+        llx, lly, urx, ury = (float(bbox_m.group(i)) for i in range(1, 5))
+        pad = 10.0
+        page_w = max(int(urx - llx + 2 * pad), 100)
+        page_h = max(int(ury - lly + 2 * pad), 100)
+        # Also shift origin so content lands at (pad, pad)
+        prelude = f"<< /PageSize [{page_w} {page_h}] >> setpagedevice\n"
+        prelude += f"{-llx + pad} {-lly + pad} translate\n"
+    else:
+        page_w = page_h = 0
+        prelude = ""
+
     with tempfile.TemporaryDirectory() as td:
         ps_path = Path(td) / "drawing.ps"
         pdf_path = Path(td) / "drawing.pdf"
-        ps_path.write_text(ps, encoding="ascii")
-        result = subprocess.run(
-            ["ps2pdf", str(ps_path), str(pdf_path)],
-            capture_output=True, text=True,
-        )
+        # Inject the page setup right after the %%EndComments marker
+        if prelude:
+            marker = "%%EndComments\n"
+            idx = ps.find(marker)
+            if idx >= 0:
+                ps_out = ps[: idx + len(marker)] + prelude + ps[idx + len(marker) :]
+            else:
+                ps_out = prelude + ps
+        else:
+            ps_out = ps
+        ps_path.write_text(ps_out, encoding="ascii")
+        cmd = ["ps2pdf"]
+        if page_w and page_h:
+            cmd += [f"-dDEVICEWIDTHPOINTS={page_w}", f"-dDEVICEHEIGHTPOINTS={page_h}"]
+        cmd += [str(ps_path), str(pdf_path)]
+        result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise HTTPException(
                 500, f"ps2pdf failed: {result.stderr or result.stdout}"

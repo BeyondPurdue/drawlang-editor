@@ -21,8 +21,14 @@ from __future__ import annotations
 
 import math
 
+PAPER_INDEX = 0
+
+# Spec v0.6: palette index 0 is `paper` — a sentinel meaning "no color" /
+# background. A `,f` modifier with no explicit `,c<n>` resolves the fill to
+# paper, which means "no visible fill" (matches SVG's fill="none"). Stroke
+# color for paper still falls back to ink so outlines render.
 DEFAULT_PALETTE = {
-    0: (0.0, 0.0, 0.0),      # black
+    0: None,                 # paper — sentinel; no visible fill
     1: (0.78, 0.16, 0.16),   # red
     2: (0.08, 0.40, 0.75),   # blue
     3: (0.18, 0.49, 0.20),   # green
@@ -85,11 +91,18 @@ class PostScriptBackend:
         self._track_bbox([(x0, y0), (x0 + w0, y0 + h0)])
         if mods["invisible"]:
             return
-        self._emit_color(mods)
+        self._emit_stroke_color(mods)
         self._emit_dash(mods)
-        if mods["fill"]:
-            self._body_parts.append(f"newpath {x0} {y0} {w0} {h0} rectfill")
+        if mods["fill"] and self._fill_color(mods) is not None:
+            # Filled: emit rectfill in fill color, then stroke outline
+            fr, fg, fb = self._fill_color(mods)
+            self._body_parts.append(
+                f"gsave {fr:.3f} {fg:.3f} {fb:.3f} setrgbcolor "
+                f"newpath {x0} {y0} {w0} {h0} rectfill grestore"
+            )
+            self._body_parts.append(f"newpath {x0} {y0} {w0} {h0} rectstroke")
         else:
+            # No fill (or paper fill = invisible) — just outline
             self._body_parts.append(f"newpath {x0} {y0} {w0} {h0} rectstroke")
         self._reset_dash(mods)
 
@@ -97,33 +110,38 @@ class PostScriptBackend:
         self._track_bbox([(cx - r, cy - r), (cx + r, cy + r)])
         if mods["invisible"]:
             return
-        self._emit_color(mods)
+        self._emit_stroke_color(mods)
         self._emit_dash(mods)
-        op = "fill" if mods["fill"] else "stroke"
-        self._body_parts.append(
-            f"newpath {cx} {cy} {r} 0 360 arc {op}"
-        )
+        if mods["fill"] and self._fill_color(mods) is not None:
+            fr, fg, fb = self._fill_color(mods)
+            self._body_parts.append(
+                f"gsave {fr:.3f} {fg:.3f} {fb:.3f} setrgbcolor "
+                f"newpath {cx} {cy} {r} 0 360 arc fill grestore"
+            )
+            self._body_parts.append(f"newpath {cx} {cy} {r} 0 360 arc stroke")
+        else:
+            self._body_parts.append(f"newpath {cx} {cy} {r} 0 360 arc stroke")
         self._reset_dash(mods)
 
     def draw_arc(self, cx, cy, r, start_angle, sweep_angle, mods):
         self._track_bbox([(cx - r, cy - r), (cx + r, cy + r)])
         if mods["invisible"]:
             return
-        self._emit_color(mods)
+        self._emit_stroke_color(mods)
         self._emit_dash(mods)
-        # PostScript `arc` goes counterclockwise from start_angle to end_angle;
-        # `arcn` goes clockwise. In language space, positive sweep = CCW.
         end_angle = start_angle + sweep_angle
         if sweep_angle >= 0:
             arc_cmd = f"{cx} {cy} {r} {start_angle} {end_angle} arc"
         else:
             arc_cmd = f"{cx} {cy} {r} {start_angle} {end_angle} arcn"
 
-        if mods["fill"]:
-            # Filled pie slice: newpath, move to center, arc, close, fill
+        if mods["fill"] and self._fill_color(mods) is not None:
+            fr, fg, fb = self._fill_color(mods)
             self._body_parts.append(
-                f"newpath {cx} {cy} moveto {arc_cmd} closepath fill"
+                f"gsave {fr:.3f} {fg:.3f} {fb:.3f} setrgbcolor "
+                f"newpath {cx} {cy} moveto {arc_cmd} closepath fill grestore"
             )
+            self._body_parts.append(f"newpath {arc_cmd} stroke")
         else:
             self._body_parts.append(f"newpath {arc_cmd} stroke")
         self._reset_dash(mods)
@@ -197,10 +215,41 @@ class PostScriptBackend:
 
     # -- Internals -----------------------------------------------------------
 
+    _INK = (0.0, 0.0, 0.0)  # fallback when palette entry is paper/None
+
     def _emit_color(self, mods):
-        idx = mods.get("color") or 0
-        r, g, b = self.palette.get(idx, self.palette[0])
+        # Legacy: kept for backward compat but no longer used by shape emitters.
+        # Only text/line emitters (which don't need paper-aware fill logic) call this.
+        idx = mods.get("color")
+        if idx is None:
+            idx = PAPER_INDEX
+        color = self.palette.get(idx)
+        if color is None:  # paper -> ink for strokes/text
+            color = self._INK
+        r, g, b = color
         self._body_parts.append(f"{r:.3f} {g:.3f} {b:.3f} setrgbcolor")
+
+    def _emit_stroke_color(self, mods):
+        """Stroke color: paper falls back to ink so outlines render."""
+        idx = mods.get("color")
+        if idx is None:
+            idx = PAPER_INDEX
+        color = self.palette.get(idx)
+        if color is None:
+            color = self._INK
+        r, g, b = color
+        self._body_parts.append(f"{r:.3f} {g:.3f} {b:.3f} setrgbcolor")
+
+    def _fill_color(self, mods):
+        """Fill color: returns (r,g,b) or None for paper (no visible fill).
+
+        Spec v0.6: with no explicit `,c<n>`, fill defaults to paper (index 0)
+        which is invisible. Explicit color >=1 resolves to that palette entry.
+        """
+        idx = mods.get("color")
+        if idx is None:
+            idx = PAPER_INDEX
+        return self.palette.get(idx)
 
     def _emit_dash(self, mods):
         if mods["dashed"]:

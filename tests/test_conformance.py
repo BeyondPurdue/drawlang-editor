@@ -384,10 +384,18 @@ class TestPostScriptBackend:
         ps = render("ma,50,50; ci,15;", "ps")
         assert re.search(r"50\s+50\s+15\s+0\s+360\s+arc\s+stroke", ps)
 
-    def test_filled_rectangle(self):
+    def test_filled_rectangle_paper(self):
+        # Spec v0.6: `,f` with no explicit color = paper = invisible fill.
+        # PS backend emits stroke outline only (matches SVG fill="none").
         ps = render("ma,10,10; rt,80,40,f;", "ps")
+        assert "rectstroke" in ps
+        assert "rectfill" not in ps
+
+    def test_filled_rectangle_with_color(self):
+        # `,f,c2` = explicit fill color blue -> rectfill + outline stroke.
+        ps = render("ma,10,10; rt,80,40,f,c2;", "ps")
         assert "rectfill" in ps
-        assert "rectstroke" not in ps
+        assert "rectstroke" in ps
 
 
 # ---------------------------------------------------------------------------
