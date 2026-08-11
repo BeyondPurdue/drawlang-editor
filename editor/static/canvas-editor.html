@@ -92,8 +92,13 @@
     <button id="render-btn" class="primary">Render</button>
   </header>
 
-  <div id="cursor-bubble" class="cursor-bubble" style="display:none">
-    <div class="cb-coord" id="cb-coord">x: 0  y: 0</div>
+  <div id="cursor-bubble" data-pinned="true" class="cursor-bubble" style="display:none">
+    <div class="cb-titlebar">
+      <span class="cb-drag-handle" title="Drag to move">☰</span>
+      <span class="cb-coord" id="cb-coord">x: 0  y: 0</span>
+      <button class="cb-pin" id="cb-pin" title="Toggle follow-cursor">📌</button>
+      <button class="cb-close" id="cb-close" title="Hide">✕</button>
+    </div>
     <div class="cb-info" id="cb-info"></div>
     <div class="cb-buttons">
       <button data-act="rot-ccw" title="Rotate CCW">↶</button>

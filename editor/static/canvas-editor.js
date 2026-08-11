@@ -227,19 +227,30 @@ function renderStatementList() {
     const sel = state.selectedIds.has(s.id) ? " selected" : "";
     return `<div class="stmt-row${sel}" data-id="${s.id}">
       <span class="stmt-seq">${s.seq}</span>
-      <span class="stmt-op">${s.opcode}</span>
-      <span class="stmt-args">${s.args}</span>
+      <span class="stmt-op" data-edit-op="${s.id}" title="Double-click to edit opcode">${escapeAttr(s.opcode)}</span>
+      <span class="stmt-args" data-edit-args="${s.id}" title="Double-click to edit args">${escapeAttr(s.args)}</span>
       <span class="stmt-del" data-del="${s.id}" title="Delete">✕</span>
     </div>`;
   }).join("");
 
   el.querySelectorAll(".stmt-row").forEach((row) => {
     row.addEventListener("click", (e) => {
+      // Don't hijack clicks on the delete X or on an active inline editor.
       if (e.target.dataset.del) return;
+      if (e.target.tagName === "INPUT") return;
       const id = parseInt(row.dataset.id);
       // v0.7: route through the shared selection helper so the canvas SVG,
       // statements list, and Edit Selected panel stay in sync.
       selectStatementById(id, e.shiftKey);
+    });
+  });
+  // v0.7: inline edit — double-click the opcode or args cell to type a new
+  // value. Enter commits, Escape cancels. Uses the same PATCH endpoint the
+  // Edit Selected form uses so validation stays in one place.
+  el.querySelectorAll("[data-edit-op],[data-edit-args]").forEach((cell) => {
+    cell.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      startInlineEdit(cell);
     });
   });
   el.querySelectorAll("[data-del]").forEach((btn) => {
@@ -251,6 +262,46 @@ function renderStatementList() {
       });
       await reloadStatements();
     });
+  });
+}
+
+function startInlineEdit(cell) {
+  const id = parseInt(cell.dataset.editOp || cell.dataset.editArgs);
+  const field = cell.dataset.editOp ? "opcode" : "args";
+  const stmt = state.statements.find((s) => s.id === id);
+  if (!stmt) return;
+  const original = stmt[field];
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = original;
+  input.className = "stmt-inline-edit";
+  input.style.width = field === "opcode" ? "3em" : "100%";
+  cell.replaceChildren(input);
+  input.focus();
+  input.select();
+
+  const commit = async () => {
+    const newVal = input.value.trim();
+    if (newVal === original) {
+      renderStatementList();
+      return;
+    }
+    try {
+      await api(`/api/canvases/${state.currentCanvas}/statements/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ [field]: newVal }),
+      });
+      await reloadStatements();
+    } catch (err) {
+      alert(`edit failed: ${err.message}`);
+      renderStatementList();
+    }
+  };
+  const cancel = () => renderStatementList();
+  input.addEventListener("blur", commit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); input.blur(); }
+    else if (e.key === "Escape") { input.removeEventListener("blur", commit); cancel(); }
   });
 }
 
@@ -938,7 +989,8 @@ function setSidebarTab(tab) {
   if (tab === "frames") refreshFramesSidebar();
 }
 
-// v0.7 Frames tab — list, create, delete. Uses the DB-backed /api/frames.
+// v0.7 Frames tab — list, create, delete, and edit fields. Uses the
+// DB-backed /api/frames.
 async function refreshFramesSidebar() {
   const host = $("frames-list");
   if (!host) return;
@@ -949,10 +1001,14 @@ async function refreshFramesSidebar() {
       return;
     }
     host.innerHTML = d.frames.map((f) => `
-      <div class="prim-item" data-frame-id="${escapeAttr(f.id)}">
-        <span class="prim-name">${escapeAttr(f.name || f.id)}</span>
-        <span class="prim-meta">${f.field_count || 0} fields</span>
-        <button class="frame-del" data-del="${escapeAttr(f.id)}" title="Delete frame" style="font-size:10px;padding:1px 4px">✕</button>
+      <div class="frame-item" data-frame-id="${escapeAttr(f.id)}">
+        <div class="prim-item frame-item-row">
+          <span class="prim-name">${escapeAttr(f.name || f.id)}</span>
+          <span class="prim-meta">${f.field_count || 0} fields</span>
+          <button class="frame-fields-btn" data-fields="${escapeAttr(f.id)}" title="Edit fields" style="font-size:10px;padding:1px 4px">✎</button>
+          <button class="frame-del" data-del="${escapeAttr(f.id)}" title="Delete frame" style="font-size:10px;padding:1px 4px">✕</button>
+        </div>
+        <div class="frame-fields-panel" data-fields-panel="${escapeAttr(f.id)}" style="display:none"></div>
       </div>
     `).join("");
     host.querySelectorAll("[data-del]").forEach((btn) => {
@@ -965,9 +1021,112 @@ async function refreshFramesSidebar() {
         await loadFrameList();
       });
     });
+    host.querySelectorAll("[data-fields]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openFrameFieldsEditor(btn.dataset.fields);
+      });
+    });
   } catch (e) {
     host.innerHTML = `<div class="status err">${escapeAttr(e.message)}</div>`;
   }
+}
+
+// v0.7: inline fields editor — shown in-line under the frame row so users
+// can add/edit/delete field metadata without leaving the sidebar. Each row
+// exposes name, description, default, x, y. Save PATCHes the whole array
+// (backend replaces fields_json in one go).
+async function openFrameFieldsEditor(frameId) {
+  const panel = document.querySelector(`[data-fields-panel="${cssEsc(frameId)}"]`);
+  if (!panel) return;
+  if (panel.style.display !== "none") {
+    panel.style.display = "none";
+    panel.innerHTML = "";
+    return;
+  }
+  panel.style.display = "";
+  panel.innerHTML = '<div class="status">Loading fields…</div>';
+  let data;
+  try { data = await api(`/api/frames/${encodeURIComponent(frameId)}`); }
+  catch (e) { panel.innerHTML = `<div class="status err">${escapeAttr(e.message)}</div>`; return; }
+
+  const fields = Array.isArray(data.fields) ? [...data.fields] : [];
+
+  const render = () => {
+    panel.innerHTML = `
+      <div class="frame-fields-editor">
+        <div class="frame-fields-head">
+          <span>name</span><span>default</span><span>x</span><span>y</span><span></span>
+        </div>
+        ${fields.map((f, i) => `
+          <div class="frame-fields-row" data-idx="${i}">
+            <input class="ff-name" type="text" value="${escapeAttr(f.name || "")}" placeholder="name" />
+            <input class="ff-def"  type="text" value="${escapeAttr(f.default || "")}" placeholder="default" />
+            <input class="ff-x"    type="number" step="0.5" value="${escapeAttr(f.x ?? 0)}" />
+            <input class="ff-y"    type="number" step="0.5" value="${escapeAttr(f.y ?? 0)}" />
+            <button class="ff-del" data-del-idx="${i}" title="Delete field">✕</button>
+          </div>
+        `).join("")}
+        <div class="frame-fields-actions">
+          <button class="ff-add">+ Add field</button>
+          <button class="ff-save primary">Save</button>
+          <button class="ff-cancel">Cancel</button>
+          <span class="ff-status"></span>
+        </div>
+      </div>
+    `;
+
+    panel.querySelector(".ff-add").addEventListener("click", () => {
+      fields.push({ name: "", default: "", x: 0, y: 0, editable: true });
+      render();
+    });
+    panel.querySelector(".ff-cancel").addEventListener("click", () => {
+      panel.style.display = "none"; panel.innerHTML = "";
+    });
+    panel.querySelectorAll("[data-del-idx]").forEach((b) => {
+      b.addEventListener("click", () => {
+        fields.splice(parseInt(b.dataset.delIdx), 1);
+        render();
+      });
+    });
+    panel.querySelector(".ff-save").addEventListener("click", async () => {
+      // Read every row into the fields[] array.
+      const rows = panel.querySelectorAll(".frame-fields-row");
+      const out = [];
+      for (const row of rows) {
+        const name = row.querySelector(".ff-name").value.trim();
+        if (!name) continue;   // skip blank rows
+        out.push({
+          name,
+          default: row.querySelector(".ff-def").value,
+          x: parseFloat(row.querySelector(".ff-x").value) || 0,
+          y: parseFloat(row.querySelector(".ff-y").value) || 0,
+          editable: true,
+        });
+      }
+      const status = panel.querySelector(".ff-status");
+      status.textContent = "Saving…";
+      status.className = "ff-status";
+      try {
+        await api(`/api/frames/${encodeURIComponent(frameId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ fields: out }),
+        });
+        status.textContent = "Saved.";
+        status.className = "ff-status ok";
+        await refreshFramesSidebar();
+      } catch (e) {
+        status.textContent = e.message;
+        status.className = "ff-status err";
+      }
+    });
+  };
+  render();
+}
+
+function cssEsc(s) {
+  // Simple CSS.escape polyfill for attr selectors on frame ids.
+  return String(s).replace(/("|\\)/g, "\\$1");
 }
 
 async function createFrameFromSidebar() {
@@ -1395,16 +1554,53 @@ async function dropOpcodeHere(opcode, args, x, y) {
   if (!bubble) return;
   const cbCoord = document.getElementById("cb-coord");
   const cbInfo = document.getElementById("cb-info");
+  const cbPin = document.getElementById("cb-pin");
+  const cbClose = document.getElementById("cb-close");
+
+  // The bubble is PINNED by default (default position: top-right of the
+  // canvas area). It never follows the mouse unless the user clicks the
+  // pin button off. It can also be closed with ✕, and hides on Escape;
+  // it comes back on the next selection change.
+  let userHidden = false;      // true after × or Escape until a new selection
+  let userMoved = false;       // true once dragged; disables auto-anchor
   let lastMouseX = 0;
   let lastMouseY = 0;
 
-  function updatePosition() {
-    // Offset a little from the pointer so it doesn't cover the click target.
+  function isPinned() { return bubble.dataset.pinned !== "false"; }
+
+  function anchorToSelection() {
+    // Position near the first-selected SVG element's bbox. If none,
+    // top-right corner of the canvas area.
+    if (userMoved) return;
+    const ids = [...state.selectedIds];
+    if (ids.length && state.svg) {
+      const el = state.svg.querySelector(`[data-statement-id="${ids[0]}"]`);
+      if (el && el.getBoundingClientRect) {
+        const r = el.getBoundingClientRect();
+        const bw = bubble.offsetWidth || 200;
+        const bh = bubble.offsetHeight || 100;
+        // Prefer top-right of the selection, fall back if it clips.
+        let x = Math.min(r.right + 12, window.innerWidth - bw - 12);
+        let y = Math.max(8, r.top - bh - 12);
+        if (y < 8) y = Math.min(r.bottom + 12, window.innerHeight - bh - 12);
+        bubble.style.left = `${x}px`;
+        bubble.style.top = `${y}px`;
+        return;
+      }
+    }
+    // Fallback: pinned to the top-right of the canvas area.
+    const host = document.getElementById("svg-host") || document.body;
+    const r = host.getBoundingClientRect();
+    const bw = bubble.offsetWidth || 200;
+    bubble.style.left = `${Math.max(8, r.right - bw - 16)}px`;
+    bubble.style.top = `${r.top + 12}px`;
+  }
+
+  function followMouse() {
     const pad = 16;
+    const rect = bubble.getBoundingClientRect();
     let x = lastMouseX + pad;
     let y = lastMouseY + pad;
-    // Keep on-screen.
-    const rect = bubble.getBoundingClientRect();
     if (x + rect.width > window.innerWidth - 8) x = lastMouseX - rect.width - pad;
     if (y + rect.height > window.innerHeight - 8) y = lastMouseY - rect.height - pad;
     bubble.style.left = `${Math.max(4, x)}px`;
@@ -1412,7 +1608,9 @@ async function dropOpcodeHere(opcode, args, x, y) {
   }
 
   function updateContent(paperX, paperY) {
-    cbCoord.textContent = `x: ${Math.round(paperX)}  y: ${Math.round(paperY)}`;
+    if (typeof paperX === "number" && typeof paperY === "number") {
+      cbCoord.textContent = `x: ${Math.round(paperX)}  y: ${Math.round(paperY)}`;
+    }
     const ids = [...state.selectedIds];
     if (ids.length === 0) {
       cbInfo.textContent = "";
@@ -1427,32 +1625,23 @@ async function dropOpcodeHere(opcode, args, x, y) {
   }
 
   function shouldShow() {
-    return state.selectedIds && state.selectedIds.size > 0;
+    return !userHidden && state.selectedIds && state.selectedIds.size > 0;
   }
 
+  // ---- Mouse tracking (only used when NOT pinned) ----
   document.addEventListener("mousemove", (e) => {
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
-    // If the mouse is inside the bubble itself, don't move it — keep it
-    // stable so the user can click its buttons.
-    if (bubble.contains(e.target)) return;
-    if (!shouldShow()) {
-      bubble.style.display = "none";
-      return;
-    }
-    // Convert the client point to paper coords using the current SVG.
-    let px = 0;
-    let py = 0;
     if (state.svg) {
       try {
         const p = svgPoint(state.svg, e);
-        px = p.x;
-        py = -p.y;
+        updateContent(p.x, -p.y);
       } catch { /* out of svg */ }
     }
-    updateContent(px, py);
+    if (isPinned() || bubble.contains(e.target)) return;
+    if (!shouldShow()) { bubble.style.display = "none"; return; }
     bubble.style.display = "";
-    updatePosition();
+    followMouse();
   });
 
   // React to selection changes even if the mouse is still. Hook the
@@ -1460,13 +1649,50 @@ async function dropOpcodeHere(opcode, args, x, y) {
   const _origApply = window.applySelectionHighlights || applySelectionHighlights;
   window.applySelectionHighlights = function () {
     _origApply();
-    if (!shouldShow()) bubble.style.display = "none";
-    else {
-      updateContent(0, 0);
-      bubble.style.display = "";
-      updatePosition();
-    }
+    userHidden = false;   // new selection un-hides
+    userMoved = false;    // new selection re-anchors
+    if (!shouldShow()) { bubble.style.display = "none"; return; }
+    updateContent();
+    bubble.style.display = "";
+    if (isPinned()) anchorToSelection();
+    else followMouse();
   };
+
+  // ---- Titlebar controls ----
+  cbPin.addEventListener("click", () => {
+    const nowPinned = !isPinned();
+    bubble.dataset.pinned = nowPinned ? "true" : "false";
+    if (nowPinned) { userMoved = false; anchorToSelection(); }
+  });
+  cbClose.addEventListener("click", () => {
+    userHidden = true;
+    bubble.style.display = "none";
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && bubble.style.display !== "none") {
+      userHidden = true;
+      bubble.style.display = "none";
+    }
+  });
+
+  // ---- Drag by the titlebar handle ----
+  const handle = bubble.querySelector(".cb-drag-handle");
+  let drag = null;
+  handle.addEventListener("mousedown", (e) => {
+    const r = bubble.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    bubble.classList.add("dragging");
+    e.preventDefault();
+  });
+  document.addEventListener("mousemove", (e) => {
+    if (!drag) return;
+    bubble.style.left = `${Math.max(4, e.clientX - drag.dx)}px`;
+    bubble.style.top = `${Math.max(4, e.clientY - drag.dy)}px`;
+    userMoved = true;
+  });
+  document.addEventListener("mouseup", () => {
+    if (drag) { drag = null; bubble.classList.remove("dragging"); }
+  });
 
   // Wire the transform buttons — dispatch identical to the sidebar toolbar.
   bubble.querySelectorAll("button[data-act]").forEach((btn) => {

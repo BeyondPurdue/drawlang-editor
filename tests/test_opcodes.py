@@ -26,8 +26,8 @@ client = TestClient(app)
 
 # Spec-anchored expected sets. Update ONLY when the language spec adds or
 # removes an opcode. Composed shapes must never appear here.
-CORE = {"mr", "ma", "dl", "da", "rt", "ci", "tx"}
-EXTENSION = {"ar", "bz", "po", "ra"}
+CORE = {"mr", "ma", "dl", "rt", "ci", "tx"}
+EXTENSION = {"ar", "bz", "sp", "im"}
 
 
 def test_list_returns_all_opcodes():
@@ -89,6 +89,21 @@ def test_get_bezier_has_six_args():
 def test_get_unknown_opcode_returns_404():
     r = client.get("/api/opcodes/zz")
     assert r.status_code == 404
+
+
+def test_every_catalog_opcode_is_parser_accepted():
+    """Regression: the catalog listed 'po'/'ra'/'da' but the parser only knew
+    'sp'/'im'/(nothing). Placing a polyline crashed the editor. From now on
+    every catalog mnemonic must round-trip through the actual parser.
+    """
+    from drawlang.parser import parse
+    r = client.get("/api/opcodes").json()
+    for op in r["opcodes"]:
+        # Build a minimal statement using the declared default args.
+        args = ",".join(str(a["default"]) for a in op["args"])
+        src = f"{op['opcode']},{args};"
+        # Should parse without a LexicalError.
+        parse(src)
 
 
 def test_primitives_tab_and_symbols_tab_are_separate():

@@ -1,10 +1,12 @@
 """
 Editor-facing catalog of drawlang v0.6 opcodes.
 
-Serves the Primitives tab. Each entry is one opcode from the language:
-7 core (spec §6) + 4 extension (spec §7). No composition, no invented
-shapes. The editor renders one editable row per opcode; args are the
-opcode's spec-declared arguments.
+Single source of truth is the parser (src/drawlang/parser.py :: OPCODE_TABLE)
+and the interpreter (src/drawlang/interpreter.py :: OPCODES). This catalog
+MUST stay a strict subset of what the parser accepts — no invented mnemonics.
+
+Current set: 6 core (spec §6: mr, ma, dl, rt, ci, tx; tz is a state modifier
+kept out of the palette) + 4 extension (spec §7: ar, bz, sp, im).
 
 Kept in-repo so the language and the editor stay in lockstep: when the
 spec adds an opcode, this list gains one row and the Primitives tab
@@ -57,17 +59,6 @@ CORE_OPCODES: list[dict[str, Any]] = [
         "args": [
             {"name": "dx", "type": "int", "default": 40},
             {"name": "dy", "type": "int", "default": 0},
-        ],
-    },
-    {
-        "opcode": "da",
-        "name": "Draw line (absolute)",
-        "group": "core",
-        "description": "Draw a line from the current pen position to absolute (x, y).",
-        "spec_section": "§6.3",
-        "args": [
-            {"name": "x", "type": "int", "default": 100},
-            {"name": "y", "type": "int", "default": 100},
         ],
     },
     {
@@ -139,20 +130,20 @@ EXTENSION_OPCODES: list[dict[str, Any]] = [
         ],
     },
     {
-        "opcode": "po",
+        "opcode": "sp",
         "name": "Polyline",
         "group": "extension",
-        "description": "Draw a polyline through N points, given as a "
-                       "comma-separated list of dx,dy pairs relative to the "
-                       "current pen position.",
+        "description": "Draw a polyline (variadic even-count list of dx,dy "
+                       "pairs relative to the current pen position). Spec §7.3 "
+                       "names the opcode 'sp' (spline/polyline).",
         "spec_section": "§7.3",
         "args": [
-            {"name": "points", "type": "text", "default": "0,0,40,0,40,40,0,40"},
+            {"name": "points", "type": "text", "default": "40,0,40,40,0,40"},
         ],
     },
     {
-        "opcode": "ra",
-        "name": "Raster",
+        "opcode": "im",
+        "name": "Image / Raster",
         "group": "extension",
         "description": "Reference a raster image asset by id, placed at the "
                        "current pen position with given width and height.",

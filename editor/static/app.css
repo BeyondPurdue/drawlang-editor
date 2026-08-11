@@ -422,3 +422,84 @@ html, body {
   font-size: 12px;
   line-height: 1;
 }
+.cursor-bubble .cb-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #eeece5;
+  padding-bottom: 4px;
+}
+.cursor-bubble .cb-drag-handle {
+  cursor: grab;
+  color: #bab9b4;
+  font-size: 12px;
+  padding: 0 2px;
+  user-select: none;
+}
+.cursor-bubble.dragging .cb-drag-handle { cursor: grabbing; }
+.cursor-bubble .cb-pin,
+.cursor-bubble .cb-close {
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0 4px;
+  font-size: 11px;
+  cursor: pointer;
+  color: #7a7974;
+  border-radius: 3px;
+}
+.cursor-bubble .cb-pin:hover,
+.cursor-bubble .cb-close:hover { background: #f2f0ea; }
+.cursor-bubble[data-pinned="true"] .cb-pin { color: #01696f; background: #e6f2f3; border-color: #01696f; }
+.cursor-bubble .cb-coord { flex: 1; }
+
+/* v0.7 inline statement editor — double-click a cell to edit opcode/args. */
+.stmt-inline-edit {
+  font: inherit;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+  padding: 1px 3px;
+  border: 1px solid #01696f;
+  border-radius: 3px;
+  background: #fff;
+  color: #28251d;
+  outline: none;
+}
+
+/* v0.7 Frames tab — inline fields editor. */
+.frame-fields-panel { padding: 6px 4px 10px; border-bottom: 1px solid #eeece5; }
+.frame-fields-editor { font-size: 11px; }
+.frame-fields-head,
+.frame-fields-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1.4fr 0.7fr 0.7fr 22px;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 3px;
+}
+.frame-fields-head { color: #7a7974; font-size: 10px; padding: 0 2px; }
+.frame-fields-row input {
+  font-family: ui-monospace,Menlo,Consolas,monospace;
+  font-size: 11px;
+  padding: 2px 4px;
+  border: 1px solid #d4d1ca;
+  border-radius: 3px;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.frame-fields-row .ff-del {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #a12c7b;
+  cursor: pointer;
+  padding: 0;
+  font-size: 11px;
+}
+.frame-fields-actions {
+  display: flex; gap: 4px; align-items: center; margin-top: 6px;
+}
+.frame-fields-actions button { font-size: 11px; padding: 2px 8px; }
+.ff-status { font-size: 11px; margin-left: 4px; }
+.ff-status.ok { color: #437a22; }
+.ff-status.err { color: #a12c7b; }
