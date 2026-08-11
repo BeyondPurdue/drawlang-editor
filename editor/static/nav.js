@@ -6,7 +6,7 @@
     { href: "/canvas-editor", label: "Canvas" },
     { href: "/library", label: "Library" },
     { href: "/frames-editor", label: "Frames" },
-    { href: "/legacy", label: "Legacy v0.1" },
+    { href: "/legacy", label: "Text Editor" },
   ];
   const here = window.location.pathname.replace(/\/$/, "") || "/canvas-editor";
   const mount = document.getElementById("app-nav");

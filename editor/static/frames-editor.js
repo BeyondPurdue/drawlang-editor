@@ -93,6 +93,7 @@ async function refreshPreview() {
     }
     document.getElementById('preview').innerHTML = data.output;
     state.svg = data.output;
+    state.drawlang = data.drawlang;
     attachHotspots();
     setStatus('Rendered · ' + Object.values(state.values).filter(v => v).length + ' fields filled');
     document.querySelectorAll('.field input.dirty').forEach(i => i.classList.remove('dirty'));
@@ -160,6 +161,27 @@ document.getElementById('export-svg').addEventListener('click', () => {
   const a = document.createElement('a');
   a.href = url; a.download = `${state.frameId}.svg`; a.click();
   URL.revokeObjectURL(url);
+});
+
+document.getElementById('export-pdf').addEventListener('click', async () => {
+  if (!state.drawlang) { setStatus('Nothing to export yet', 'error'); return; }
+  setStatus('Rendering PDF…');
+  try {
+    const res = await fetch('/export/pdf', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({program: state.drawlang}),
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${state.frameId}.pdf`; a.click();
+    URL.revokeObjectURL(url);
+    setStatus('PDF exported');
+  } catch (e) {
+    setStatus('PDF export failed: ' + e.message, 'error');
+  }
 });
 
 (async function main() {

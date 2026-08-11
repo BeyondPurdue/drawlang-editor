@@ -77,8 +77,12 @@ async function renderCanvas() {
 }
 
 function hookSvgEvents(svg) {
+  // DrawLang paper coords are y-down; the renderer flips the world with
+  // transform="scale(1 -1)" so PDF/print orientation matches. Undo that flip
+  // when converting screen -> DrawLang coordinates.
+  const toPaper = (p) => ({ x: p.x, y: -p.y });
   svg.addEventListener("mousemove", (e) => {
-    const p = svgPoint(svg, e);
+    const p = toPaper(svgPoint(svg, e));
     $("coord-hud").textContent = `x: ${Math.round(p.x)}  y: ${Math.round(p.y)}`;
   });
   // Attach to the host container so clicks always land, even on inner <g>
@@ -86,7 +90,7 @@ function hookSvgEvents(svg) {
   const host = $("svg-host");
   host.onclick = (e) => {
     if (!state.pendingDrop) return;
-    const p = svgPoint(svg, e);
+    const p = toPaper(svgPoint(svg, e));
     dropLibraryHere(state.pendingDrop, p.x, p.y);
     state.pendingDrop = null;
     svg.style.cursor = "crosshair";
