@@ -1,0 +1,216 @@
+{
+  "frame_id": "a3-empty",
+  "source": "Panglima 99ADA17GS010M",
+  "fields": [
+    {
+      "name": "a1_mod_date",
+      "description": "Revision A1 \u2014 modification date",
+      "editable": true,
+      "x": 244.0,
+      "y": 57.0,
+      "line_index": 511,
+      "raw_line": 515,
+      "default": ""
+    },
+    {
+      "name": "a1_rev",
+      "description": "Revision A1 \u2014 code",
+      "editable": true,
+      "x": 22.0,
+      "y": 57.0,
+      "line_index": 517,
+      "raw_line": 521,
+      "default": ""
+    },
+    {
+      "name": "drawn_date",
+      "description": "Drawn \u2014 date",
+      "editable": true,
+      "x": 140.0,
+      "y": 57.0,
+      "line_index": 520,
+      "raw_line": 524,
+      "default": ""
+    },
+    {
+      "name": "drawn_by",
+      "description": "Drawn \u2014 by (initials)",
+      "editable": true,
+      "x": 190.0,
+      "y": 57.0,
+      "line_index": 523,
+      "raw_line": 527,
+      "default": ""
+    },
+    {
+      "name": "a2_rev",
+      "description": "Revision A2 \u2014 code",
+      "editable": true,
+      "x": 22.0,
+      "y": 44.0,
+      "line_index": 526,
+      "raw_line": 530,
+      "default": ""
+    },
+    {
+      "name": "checked_date",
+      "description": "Checked \u2014 date",
+      "editable": true,
+      "x": 140.0,
+      "y": 44.0,
+      "line_index": 529,
+      "raw_line": 533,
+      "default": ""
+    },
+    {
+      "name": "checked_by",
+      "description": "Checked \u2014 by (initials)",
+      "editable": true,
+      "x": 190.0,
+      "y": 44.0,
+      "line_index": 532,
+      "raw_line": 536,
+      "default": ""
+    },
+    {
+      "name": "ap_f",
+      "description": "AP-F",
+      "editable": true,
+      "x": 724.0,
+      "y": 86.0,
+      "line_index": 538,
+      "raw_line": 542,
+      "default": ""
+    },
+    {
+      "name": "cycle",
+      "description": "Cycle",
+      "editable": true,
+      "x": 774.0,
+      "y": 98.0,
+      "line_index": 541,
+      "raw_line": 545,
+      "default": ""
+    },
+    {
+      "name": "pb",
+      "description": "PB",
+      "editable": true,
+      "x": 859.0,
+      "y": 98.0,
+      "line_index": 544,
+      "raw_line": 548,
+      "default": ""
+    },
+    {
+      "name": "system",
+      "description": "System code (e.g. YFR)",
+      "editable": true,
+      "x": 1038.0,
+      "y": 57.0,
+      "line_index": 547,
+      "raw_line": 551,
+      "default": ""
+    },
+    {
+      "name": "plan_kks",
+      "description": "Plan KKS designator",
+      "editable": true,
+      "x": 1075.0,
+      "y": 57.0,
+      "line_index": 550,
+      "raw_line": 554,
+      "default": ""
+    },
+    {
+      "name": "function_desc",
+      "description": "Function description",
+      "editable": true,
+      "x": 688.0,
+      "y": 32.0,
+      "line_index": 559,
+      "raw_line": 563,
+      "default": ""
+    },
+    {
+      "name": "plant_name",
+      "description": "Plant name (line 1)",
+      "editable": true,
+      "x": 318.0,
+      "y": 57.0,
+      "line_index": 562,
+      "raw_line": 566,
+      "default": ""
+    },
+    {
+      "name": "customer_name",
+      "description": "Customer name (line 2)",
+      "editable": true,
+      "x": 318.0,
+      "y": 44.0,
+      "line_index": 565,
+      "raw_line": 569,
+      "default": ""
+    },
+    {
+      "name": "project_code",
+      "description": "Project code",
+      "editable": true,
+      "x": 500.0,
+      "y": 32.0,
+      "line_index": 568,
+      "raw_line": 572,
+      "default": ""
+    },
+    {
+      "name": "page_kks",
+      "description": "Page KKS",
+      "editable": true,
+      "x": 688.0,
+      "y": 57.0,
+      "line_index": 576,
+      "raw_line": 580,
+      "default": ""
+    },
+    {
+      "name": "page_rev",
+      "description": "Page revision",
+      "editable": true,
+      "x": 750.0,
+      "y": 57.0,
+      "line_index": 579,
+      "raw_line": 583,
+      "default": ""
+    },
+    {
+      "name": "user_project",
+      "description": "User project ID",
+      "editable": true,
+      "x": 20.0,
+      "y": 100.0,
+      "line_index": 590,
+      "raw_line": 594,
+      "default": ""
+    },
+    {
+      "name": "created_date",
+      "description": "Created date (ISO)",
+      "editable": true,
+      "x": 20.0,
+      "y": 87.0,
+      "line_index": 592,
+      "raw_line": 596,
+      "default": ""
+    },
+    {
+      "name": "modified_date",
+      "description": "Modified date (ISO)",
+      "editable": true,
+      "x": 20.0,
+      "y": 74.0,
+      "line_index": 594,
+      "raw_line": 598,
+      "default": ""
+    }
+  ]
+}

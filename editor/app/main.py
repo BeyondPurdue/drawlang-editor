@@ -128,6 +128,11 @@ def index() -> HTMLResponse:
     return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
 
 
+@app.get("/frames-editor", response_class=HTMLResponse)
+def frames_editor_page() -> HTMLResponse:
+    return HTMLResponse((STATIC_DIR / "frames-editor.html").read_text(encoding="utf-8"))
+
+
 @app.post("/render", response_model=RenderResponse)
 def render_program(req: RenderRequest) -> RenderResponse:
     if req.backend not in ("svg", "ps"):
@@ -504,3 +509,56 @@ REFERENCE = {
     "coord_system": "y-up Cartesian. Origin lower-left. Angles CCW in degrees, 0° along +X.",
     "pen_state": "Position (x, y) + text_size (initial 10). Implicit pen-up between statements.",
 }
+
+
+# ---------------------------------------------------------------------------
+# Frame templates API — editable ES680 title-block frames
+# ---------------------------------------------------------------------------
+from app import frames as _frames_mod  # noqa: E402
+
+
+@app.get("/api/frames")
+def api_list_frames() -> JSONResponse:
+    """List available frame templates."""
+    return JSONResponse({"frames": _frames_mod.list_frames()})
+
+
+@app.get("/api/frames/{frame_id}")
+def api_get_frame(frame_id: str) -> JSONResponse:
+    """Return frame drawlang + field metadata (no user values applied)."""
+    try:
+        return JSONResponse(_frames_mod.get_frame(frame_id))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"frame {frame_id!r} not found")
+
+
+class FrameValues(BaseModel):
+    values: dict[str, str]
+
+
+@app.post("/api/frames/{frame_id}/render")
+def api_render_frame(frame_id: str, req: FrameValues) -> JSONResponse:
+    """
+    Apply field values to the frame source and render.
+    Returns {ok, output (SVG), fields}. Never mutates stored frame files.
+    """
+    try:
+        composed = _frames_mod.get_frame(frame_id, values=req.values)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"frame {frame_id!r} not found")
+
+    try:
+        svg = render(composed["drawlang"], backend="svg")
+    except DrawLangError as e:
+        return JSONResponse({
+            "ok": False,
+            "error": str(e),
+            "error_kind": type(e).__name__,
+            "statement_index": getattr(e, "statement_index", None),
+        })
+    return JSONResponse({
+        "ok": True,
+        "output": svg,
+        "fields": composed["fields"],
+        "drawlang": composed["drawlang"],
+    })
