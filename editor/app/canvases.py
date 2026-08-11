@@ -265,12 +265,29 @@ def get_canvas(id_or_slug: str | int) -> dict | None:
     }
 
 
-def get_canvas_program(id_or_slug: str | int) -> str | None:
-    """Reconstruct the drawlang program for a canvas."""
+def get_canvas_program(id_or_slug: str | int, *, with_frame: bool = True) -> str | None:
+    """Reconstruct the drawlang program for a canvas.
+
+    If the canvas has a frame_id and with_frame=True, the frame's drawlang is
+    prepended so the rendered output shows the frame around the canvas content.
+    """
     data = get_canvas(id_or_slug)
     if data is None:
         return None
-    return program_from_statements(data["statements"])
+    body = program_from_statements(data["statements"])
+    frame_id = data["canvas"].get("frame_id")
+    if with_frame and frame_id:
+        try:
+            # Lazy import to avoid circular dependency
+            from . import frames as _frames  # noqa: WPS433
+            frame = _frames.get_frame(frame_id)
+            frame_prog = frame.get("drawlang") or frame.get("program") or ""
+            if frame_prog:
+                return frame_prog.rstrip() + "\n# --- canvas content ---\n" + body
+        except Exception:
+            # If the frame can't be loaded, fall back to canvas-only render
+            pass
+    return body
 
 
 def delete_canvas(id_or_slug: str | int) -> bool:

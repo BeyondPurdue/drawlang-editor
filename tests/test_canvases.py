@@ -162,8 +162,9 @@ def test_list_canvases_returns_statement_count(temp_db):
 
 def test_seed_from_frame_source(temp_db):
     """
-    Seed a canvas from the a3-grid frame drawlang and verify that joining
-    the stored statements reproduces a parse-equivalent program.
+    Seed a canvas from the a3-grid frame drawlang and verify that the stored
+    body statements alone (with_frame=False) reproduce a parse-equivalent
+    program.
     """
     canvases = temp_db["canvases"]
     root = Path(__file__).resolve().parent.parent
@@ -171,9 +172,30 @@ def test_seed_from_frame_source(temp_db):
     canvases.create_canvas(
         name="a3-grid-copy", frame_id="a3-grid", program=frame_src
     )
-    prog = canvases.get_canvas_program("a3-grid-copy")
-    assert prog is not None
-    assert canvases.parse_program(prog) == canvases.parse_program(frame_src)
+    body = canvases.get_canvas_program("a3-grid-copy", with_frame=False)
+    assert body is not None
+    assert canvases.parse_program(body) == canvases.parse_program(frame_src)
+
+
+def test_get_canvas_program_prepends_frame(temp_db):
+    """
+    When a canvas has frame_id set, get_canvas_program (default with_frame=True)
+    prepends the frame's drawlang so rendering shows the frame around content.
+    """
+    canvases = temp_db["canvases"]
+    # Seed a canvas with a small body and attach the a3-grid frame.
+    canvases.create_canvas(
+        name="framed", frame_id="a3-grid", program="ma,100,100;dl,10,0;"
+    )
+    with_frame = canvases.get_canvas_program("framed")
+    without = canvases.get_canvas_program("framed", with_frame=False)
+    assert with_frame is not None and without is not None
+    # With-frame program is strictly longer and ends with the body.
+    assert len(with_frame) > len(without)
+    assert without.strip() in with_frame
+    # Sanity: both parse cleanly.
+    assert canvases.parse_program(with_frame)
+    assert canvases.parse_program(without)
 
 
 # ---------------------------------------------------------------------------

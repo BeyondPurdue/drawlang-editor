@@ -50,8 +50,33 @@ async function loadCanvas(slug) {
   state.currentCanvas = slug;
   state.statements = data.statements;
   state.selectedIds = new Set();
+  const frameSel = $("frame-select");
+  if (frameSel) frameSel.value = data.canvas?.frame_id || "";
+  const renameEl = $("canvas-rename");
+  if (renameEl) renameEl.value = data.canvas?.name || "";
   renderStatementList();
   await renderCanvas();
+}
+
+async function loadFrameList() {
+  try {
+    const res = await fetch("/api/frames");
+    if (!res.ok) return;
+    const data = await res.json();
+    const frames = data.frames || data;
+    const sel = $("frame-select");
+    if (!sel) return;
+    // Preserve the placeholder option
+    sel.innerHTML = '<option value="">— none —</option>';
+    for (const f of frames) {
+      const opt = document.createElement("option");
+      opt.value = f.id || f.slug;
+      opt.textContent = f.name || f.id || f.slug;
+      sel.appendChild(opt);
+    }
+  } catch (e) {
+    console.error("frame list failed", e);
+  }
 }
 
 async function renderCanvas() {
@@ -441,10 +466,67 @@ $("save-symbol-btn").addEventListener("click", async () => {
 
 $("render-btn").addEventListener("click", () => renderCanvas());
 
+// Frame picker: PATCH the canvas when the user changes the frame.
+$("frame-select").addEventListener("change", async (e) => {
+  if (!state.currentCanvas) return;
+  const frameId = e.target.value; // "" means clear
+  try {
+    await api(`/api/canvases/${state.currentCanvas}`, {
+      method: "PATCH",
+      body: JSON.stringify({ frame_id: frameId }),
+    });
+    await renderCanvas();
+  } catch (err) {
+    alert("Frame change failed: " + err.message);
+  }
+});
+
+// Import: open file picker, then upload the file's text as drawlang.
+$("import-btn").addEventListener("click", () => {
+  if (!state.currentCanvas) { alert("Choose a canvas first"); return; }
+  $("import-file").click();
+});
+
+$("import-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  const lines = text.split("\n").length;
+  const replace = confirm(
+    `Import ${file.name} (${lines} lines) into "${state.currentCanvas}"?\n\n` +
+    `OK = REPLACE canvas contents (clear existing statements first)\n` +
+    `Cancel = APPEND to existing statements`
+  );
+  try {
+    if (replace) {
+      // Replace: use PUT /program which clears and re-inserts.
+      const res = await fetch(`/api/canvases/${state.currentCanvas}/program`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ program: text }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+    } else {
+      // Append: POST to /statements with program body.
+      await api(`/api/canvases/${state.currentCanvas}/statements`, {
+        method: "POST",
+        body: JSON.stringify({ program: text }),
+      });
+    }
+    await loadCanvas(state.currentCanvas);
+  } catch (err) {
+    alert("Import failed: " + err.message);
+  } finally {
+    // Reset the file input so the same file can be picked again.
+    e.target.value = "";
+  }
+});
+
 // --------------------------------------------------------------------------
 // Startup
 // --------------------------------------------------------------------------
 (async () => {
+  await loadFrameList();
   await refreshCanvasList();
   await refreshLibrary();
 })();

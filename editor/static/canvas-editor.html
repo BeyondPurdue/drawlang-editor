@@ -58,6 +58,12 @@
     <select id="canvas-select"><option value="">— choose canvas —</option></select>
     <button id="new-canvas-btn">New</button>
     <input type="text" id="canvas-rename" placeholder="Rename…" style="width:160px" />
+    <label style="margin-left:8px;font-size:13px;color:#7a7974">Frame:</label>
+    <select id="frame-select" style="min-width:130px">
+      <option value="">— none —</option>
+    </select>
+    <button id="import-btn" title="Append a .drawlang file to this canvas">Import…</button>
+    <input type="file" id="import-file" accept=".drawlang,text/plain" style="display:none" />
     <div class="spacer"></div>
     <button id="render-btn" class="primary">Render</button>
   </header>
