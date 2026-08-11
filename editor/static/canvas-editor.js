@@ -191,6 +191,250 @@ function renderStatementList() {
   });
 }
 
+// --------------------------------------------------------------------------
+// Selection transforms — computed purely on the args of existing opcodes.
+// v0.6 drawlang stays LOCKED; nothing here introduces new opcodes.
+// --------------------------------------------------------------------------
+
+// Reload the current canvas's statements + re-render. Idempotent; safe to
+// call after any mutation (PATCH / DELETE / POST /statements).
+async function reloadStatements() {
+  if (!state.currentCanvas) return;
+  await loadCanvas(state.currentCanvas);
+}
+
+// Parse a statement's args string into an array of numbers where possible.
+// Falls back to strings (e.g. tx text argument).
+function _parseArgs(s) {
+  return s.split(",").map((p) => {
+    const t = p.trim();
+    const n = Number(t);
+    return Number.isFinite(n) && t !== "" ? n : t;
+  });
+}
+function _joinArgs(arr) {
+  // + 0 normalises -0 -> 0 so we don't emit "-0" back into drawlang.
+  return arr.map((v) => (typeof v === "number" ? String(v + 0) : v)).join(",");
+}
+
+// Return {cx, cy} — the average of the ma/mr chain endpoints in the selection.
+// Simple heuristic: use the last known absolute position of ma/rt/ci opcodes;
+// for a mixed selection fall back to (0,0). This is only used as the pivot
+// for rotate-around-selection when a real absolute anchor cannot be found.
+function _selectionCentroid(stmts) {
+  const xs = [], ys = [];
+  for (const s of stmts) {
+    const a = _parseArgs(s.args);
+    if ((s.opcode === "ma" || s.opcode === "rt" || s.opcode === "ci") &&
+        typeof a[0] === "number" && typeof a[1] === "number") {
+      xs.push(a[0]); ys.push(a[1]);
+    }
+  }
+  if (!xs.length) return { cx: 0, cy: 0 };
+  const cx = xs.reduce((s, v) => s + v, 0) / xs.length;
+  const cy = ys.reduce((s, v) => s + v, 0) / ys.length;
+  return { cx, cy };
+}
+
+// Apply a per-statement transform and PATCH each changed row.
+// `fn(stmt) => new args string` (return null to skip a statement).
+async function _transformSelection(fn) {
+  const ids = [...state.selectedIds];
+  if (!ids.length) return;
+  const changed = [];
+  for (const id of ids) {
+    const stmt = state.statements.find((s) => s.id === id);
+    if (!stmt) continue;
+    const newArgs = fn(stmt);
+    if (newArgs === null || newArgs === stmt.args) continue;
+    changed.push({ id, args: newArgs });
+  }
+  for (const c of changed) {
+    await api(`/api/canvases/${state.currentCanvas}/statements/${c.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ args: c.args }),
+    });
+  }
+  await reloadStatements();
+}
+
+// Rotation: quadrant only (90 CW / 90 CCW / 180). Pivot is the selection
+// centroid; relative opcodes (mr, dl) rotate around origin (they're deltas).
+function _rotateArgs(stmt, quadrant, pivot) {
+  const a = _parseArgs(stmt.args);
+  const op = stmt.opcode;
+  // helpers
+  const rot = (x, y) => {
+    if (quadrant === 90)  return [-y,  x]; // CCW
+    if (quadrant === -90) return [ y, -x]; // CW
+    return [-x, -y];                        // 180
+  };
+  if (op === "mr" || op === "dl") {
+    if (typeof a[0] === "number" && typeof a[1] === "number") {
+      const [nx, ny] = rot(a[0], a[1]);
+      return _joinArgs([nx, ny, ...a.slice(2)]);
+    }
+  } else if (op === "ma") {
+    if (typeof a[0] === "number" && typeof a[1] === "number") {
+      const [nx, ny] = rot(a[0] - pivot.cx, a[1] - pivot.cy);
+      return _joinArgs([Math.round(nx + pivot.cx), Math.round(ny + pivot.cy), ...a.slice(2)]);
+    }
+  } else if (op === "rt") {
+    // rt w,h — 90° rotation swaps w<->h; 180° keeps them
+    if (Math.abs(quadrant) === 90 && typeof a[0] === "number" && typeof a[1] === "number") {
+      return _joinArgs([a[1], a[0], ...a.slice(2)]);
+    }
+  }
+  // ci (radius unchanged), tx (glyph rotation not in v0.6), everything else: skip
+  return null;
+}
+
+// Mirror axis: "h" flips X (left↔right), "v" flips Y (top↔bottom).
+function _mirrorArgs(stmt, axis, pivot) {
+  const a = _parseArgs(stmt.args);
+  const op = stmt.opcode;
+  if (op === "mr" || op === "dl") {
+    if (typeof a[0] !== "number" || typeof a[1] !== "number") return null;
+    return axis === "h"
+      ? _joinArgs([-a[0], a[1], ...a.slice(2)])
+      : _joinArgs([a[0], -a[1], ...a.slice(2)]);
+  }
+  if (op === "ma") {
+    if (typeof a[0] !== "number" || typeof a[1] !== "number") return null;
+    return axis === "h"
+      ? _joinArgs([Math.round(2 * pivot.cx - a[0]), a[1], ...a.slice(2)])
+      : _joinArgs([a[0], Math.round(2 * pivot.cy - a[1]), ...a.slice(2)]);
+  }
+  // rt/ci width/radius unchanged, tx unchanged
+  return null;
+}
+
+async function rotateSelection(quadrant) {
+  const stmts = state.statements.filter((s) => state.selectedIds.has(s.id));
+  const pivot = _selectionCentroid(stmts);
+  await _transformSelection((s) => _rotateArgs(s, quadrant, pivot));
+}
+async function mirrorSelection(axis) {
+  const stmts = state.statements.filter((s) => state.selectedIds.has(s.id));
+  const pivot = _selectionCentroid(stmts);
+  await _transformSelection((s) => _mirrorArgs(s, axis, pivot));
+}
+
+async function duplicateSelection() {
+  const ids = [...state.selectedIds];
+  const stmts = state.statements
+    .filter((s) => ids.includes(s.id))
+    .sort((a, b) => a.seq - b.seq);
+  if (!stmts.length) return;
+  // Append copies via the /statements program endpoint — one round-trip.
+  const program = stmts.map((s) => `${s.opcode},${s.args};`).join("\n");
+  const res = await api(`/api/canvases/${state.currentCanvas}/statements`, {
+    method: "POST",
+    body: JSON.stringify({ program }),
+  });
+  await reloadStatements();
+  // Select the newly-appended copies (last N statements after reload).
+  const all = state.statements.sort((a, b) => a.seq - b.seq);
+  const newIds = all.slice(-stmts.length).map((s) => s.id);
+  state.selectedIds = new Set(newIds);
+  renderStatementList();
+  showEditPanel();
+}
+
+async function groupSelection() {
+  const ids = [...state.selectedIds];
+  if (ids.length < 2) return;
+  const gid = "g-" + Math.random().toString(36).slice(2, 10);
+  for (const id of ids) {
+    await api(`/api/canvases/${state.currentCanvas}/statements/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ group_id: gid }),
+    });
+  }
+  await reloadStatements();
+}
+async function ungroupSelection() {
+  const ids = [...state.selectedIds];
+  for (const id of ids) {
+    await api(`/api/canvases/${state.currentCanvas}/statements/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ group_id: null }),
+    });
+  }
+  await reloadStatements();
+}
+
+async function copySelectionAsDrawlang() {
+  const stmts = state.statements
+    .filter((s) => state.selectedIds.has(s.id))
+    .sort((a, b) => a.seq - b.seq);
+  if (!stmts.length) return;
+  const text = stmts.map((s) => `${s.opcode},${s.args};`).join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    // Small toast via edit-panel status area
+    const panel = document.getElementById("copy-status");
+    if (panel) { panel.textContent = `Copied ${stmts.length} statement(s)`; setTimeout(() => panel.textContent = "", 1800); }
+  } catch (e) {
+    // Fallback: put it in a textarea for manual copy
+    const t = document.createElement("textarea");
+    t.value = text; document.body.appendChild(t); t.select(); document.execCommand("copy"); document.body.removeChild(t);
+  }
+}
+
+// --------------------------------------------------------------------------
+// Right-rail edit panel
+// --------------------------------------------------------------------------
+
+// Shared bubble toolbar HTML for any non-empty selection.
+function _bubbleToolbar(n) {
+  return `
+    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+      <button data-act="rot-ccw" title="Rotate 90° counter-clockwise">↶ 90°</button>
+      <button data-act="rot-cw"  title="Rotate 90° clockwise">↷ 90°</button>
+      <button data-act="rot-180" title="Rotate 180°">180°</button>
+      <button data-act="mir-h"   title="Mirror horizontally (flip X)">⇔ H</button>
+      <button data-act="mir-v"   title="Mirror vertically (flip Y)">⇕ V</button>
+      <button data-act="dup"     title="Duplicate selection">Duplicate</button>
+      <button data-act="grp"     title="Group selection (assign shared group_id)" ${n < 2 ? "disabled" : ""}>Group</button>
+      <button data-act="ungrp"   title="Ungroup (clear group_id)">Ungroup</button>
+      <button data-act="copy"    title="Copy selection as drawlang">Copy DL</button>
+      <button data-act="del"     title="Delete selection" style="color:#a12c7b">Delete</button>
+    </div>
+    <div id="copy-status" style="font-size:12px;color:#437a22;min-height:16px"></div>
+  `;
+}
+
+// Wire the bubble toolbar's buttons.
+function _wireBubbleButtons(panel) {
+  panel.querySelectorAll("button[data-act]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const act = btn.dataset.act;
+      try {
+        if (act === "rot-ccw") await rotateSelection(90);
+        else if (act === "rot-cw") await rotateSelection(-90);
+        else if (act === "rot-180") await rotateSelection(180);
+        else if (act === "mir-h") await mirrorSelection("h");
+        else if (act === "mir-v") await mirrorSelection("v");
+        else if (act === "dup") await duplicateSelection();
+        else if (act === "grp") await groupSelection();
+        else if (act === "ungrp") await ungroupSelection();
+        else if (act === "copy") await copySelectionAsDrawlang();
+        else if (act === "del") {
+          const ids = [...state.selectedIds];
+          for (const id of ids) {
+            await api(`/api/canvases/${state.currentCanvas}/statements/${id}`, { method: "DELETE" });
+          }
+          state.selectedIds = new Set();
+          await reloadStatements();
+        }
+      } catch (e) {
+        alert(`${act} failed: ${e.message}`);
+      }
+    });
+  });
+}
+
 function showEditPanel() {
   const ids = [...state.selectedIds];
   const panel = $("edit-panel");
@@ -201,22 +445,16 @@ function showEditPanel() {
   if (ids.length > 1) {
     panel.innerHTML = `
       <div class="status">${ids.length} selected</div>
-      <button id="delete-selection" style="width:100%">Delete selection</button>`;
-    $("delete-selection").addEventListener("click", async () => {
-      for (const id of ids) {
-        await api(`/api/canvases/${state.currentCanvas}/statements/${id}`, {
-          method: "DELETE",
-        });
-      }
-      state.selectedIds = new Set();
-      await reloadStatements();
-    });
+      ${_bubbleToolbar(ids.length)}
+    `;
+    _wireBubbleButtons(panel);
     return;
   }
   const stmt = state.statements.find((s) => s.id === ids[0]);
   if (!stmt) return;
   const currentTag = stmt.meaning_tag ?? "";
   panel.innerHTML = `
+    ${_bubbleToolbar(1)}
     <label style="font-size:12px">Opcode</label>
     <input type="text" id="edit-op" value="${stmt.opcode}" style="width:100%;margin-bottom:6px" />
     <label style="font-size:12px">Args</label>
@@ -224,6 +462,7 @@ function showEditPanel() {
     <label style="font-size:12px">Meaning tag <span style="color:#7a7974">(optional)</span></label>
     <input type="text" id="edit-meaning" value="${escapeAttr(currentTag)}" placeholder="e.g. motor/pump-101/body" style="width:100%;margin-bottom:6px" />
     <button id="edit-save" style="width:100%">Save</button>`;
+  _wireBubbleButtons(panel);
   $("edit-save").addEventListener("click", async () => {
     const newTag = $("edit-meaning").value.trim();
     // Empty string → clear the tag (send explicit null so backend clears).
