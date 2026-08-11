@@ -79,7 +79,7 @@ class TestDlInvisibleRendering:
         assert h >= 50, f"viewBox height {h} does not span 50 units"
 
     def test_pic_ex_24904_pattern_renders(self) -> None:
-        """Real ES680 pic_ex 24904 pattern — the case that motivated v0.4."""
+        """Real legacy pic_ex 24904 pattern — the case that motivated v0.4."""
         prog = "ma,50,50; mr,-12,-12; rt,24,25,i; dl,10,0,i; mr,-10,0; dl,0,10,i;"
         svg = render(prog, backend="svg")
         # All shapes are invisible — nothing should render visibly

@@ -161,7 +161,7 @@ def export_pdf(req: RenderRequest) -> Response:
     """Render the program to PostScript, then convert to PDF via ps2pdf.
 
     Sizes the PDF page to the actual %%BoundingBox from the PS output so
-    landscape frames (A3 ES680) don't get clipped by the default Letter page.
+    landscape frames (A3) don't get clipped by the default Letter page.
     """
     try:
         ps = render(req.program, "ps")
@@ -547,7 +547,7 @@ REFERENCE = {
 
 
 # ---------------------------------------------------------------------------
-# Frame templates API — editable ES680 title-block frames
+# Frame templates API — editable legacy title-block frames
 # ---------------------------------------------------------------------------
 from app import frames as _frames_mod  # noqa: E402
 

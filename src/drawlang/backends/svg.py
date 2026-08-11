@@ -18,7 +18,7 @@ import math
 #
 # Palette index 0 is reserved as `paper` — the background / non-color slot.
 # Fills that resolve to index 0 emit `fill="none"` in SVG (invisible fill).
-# This matches the historical Siemens ES680 HMI, where palette entry 0 was
+# This matches legacy HMI vector-drawing behaviour, where palette entry 0 was
 # the workstation background color, so `rt,W,H,f` with no explicit `,c<n>`
 # drew a rectangle whose fill was the background (visually just the outline).
 #
@@ -222,12 +222,12 @@ class SVGBackend:
         # transform on the root <g>. Then everything inside is in language
         # coordinates.
         body = "\n  ".join(self._body_parts)
-        # Emit the SVG at its natural ES680 pixel size (1 language unit = 1
-        # CSS pixel). This matches how ES680 itself rendered drawings on a
-        # ~1024x900 workstation display: frames are exactly frame-sized, text
-        # and line weights are legible, small detail templates fit normally.
-        # Large templates (11000+ px picex sheets) will overflow the viewport;
-        # the preview UI provides pan+zoom around them, again matching ES680.
+        # Emit the SVG at its natural pixel size (1 language unit = 1
+        # CSS pixel). This matches how legacy HMI stations rendered drawings
+        # on a ~1024x900 workstation display: frames are exactly frame-sized,
+        # text and line weights are legible, small detail templates fit
+        # normally. Large templates (11000+ px picex sheets) will overflow
+        # the viewport; the preview UI provides pan+zoom around them.
         # data-content-width / data-content-height duplicate the size so a
         # zoom controller can read them without parsing the viewBox.
         # vector-effect="non-scaling-stroke" on the outer g forces every child
@@ -235,8 +235,8 @@ class SVGBackend:
         # CSS transform scale that the preview applies. This is what makes
         # a huge picex sheet (11000+ px) legible when zoomed out: 1-px lines
         # stay 1 CSS px, tick marks stay visible, text stays crisp. It has
-        # no effect at 1:1 zoom, and it matches ES680's own cosmetic-line
-        # behaviour on lower-resolution displays.
+        # no effect at 1:1 zoom, and it matches the cosmetic-line
+        # behaviour of legacy HMI displays.
         # Embedded stylesheet forces every stroked primitive to use
         # vector-effect:non-scaling-stroke, so lines stay 1 CSS px wide at
         # every zoom level. non-scaling-stroke is not inherited via SVG

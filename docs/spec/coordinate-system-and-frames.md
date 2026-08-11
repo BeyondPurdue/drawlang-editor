@@ -2,13 +2,13 @@
 
 **Status:** authoritative reference (2026-08-10). Supersedes the "1 px = 1 SVG unit" assumption in `06-render-architecture.md`.
 
-**Purpose:** define exactly what the numbers in a `cmd` program mean, how they map to physical paper, and what role the `frame` and `raster` tables play. Every renderer (SVG, PostScript, PDF, CGA screen) must obey this model or it will not replicate ES680.
+**Purpose:** define exactly what the numbers in a `cmd` program mean, how they map to physical paper, and what role the `frame` and `raster` tables play. Every renderer (SVG, PostScript, PDF, CGA screen) must obey this model or it will not replicate legacy.
 
 ---
 
 ## 1. Summary — the single most important fact
 
-**ES680 does not store a fixed language-unit → millimetre ratio anywhere in the database.**
+**legacy does not store a fixed language-unit → millimetre ratio anywhere in the database.**
 
 Coordinates inside a `cmd` program (pic_b.cmd, pic_ex.cmd) are **abstract plotter pixels**. They have no inherent physical size. The mapping to real paper (mm, points, inches) is derived **at render time** from three inputs:
 
@@ -156,7 +156,7 @@ x_mm(px) = ml + (px - F.gu_x) * sx
 y_mm(px) = mb + (px - F.gu_y) * sy   # y grows UP; both frame and paper use lower-left origin
 ```
 
-If `sx ≠ sy` the drawing would distort. In practice the plotter driver either preserves aspect ratio (choosing the smaller of `sx, sy` and centring the plan on the paper) or accepts distortion — this needs to be verified against actual ES680 plots, but the safe default for our renderer is **preserve aspect ratio**.
+If `sx ≠ sy` the drawing would distort. In practice the plotter driver either preserves aspect ratio (choosing the smaller of `sx, sy` and centring the plan on the paper) or accepts distortion — this needs to be verified against actual legacy plots, but the safe default for our renderer is **preserve aspect ratio**.
 
 For **Frame 4 on A3 landscape** (420 × 297 mm), typical plotter margins ≈ 10 mm all round:
 
@@ -226,8 +226,8 @@ Note that **the SVG backend never chooses its own viewBox from bbox heuristics**
 
 ## 10. Open items
 
-1. **Verify plotter margins.** The 10 mm default is a placeholder — real ES680 plotter driver config should be checked (search for `.pl` config files or plotter-init scripts in the backup snapshots).
-2. **Verify aspect-ratio behaviour.** Confirm whether the plotter driver stretches to fit or preserves aspect ratio and centres. A single real ES680 A3 plot side-by-side with our replica render will settle this.
+1. **Verify plotter margins.** The 10 mm default is a placeholder — real legacy plotter driver config should be checked (search for `.pl` config files or plotter-init scripts in the backup snapshots).
+2. **Verify aspect-ratio behaviour.** Confirm whether the plotter driver stretches to fit or preserves aspect ratio and centres. A single real legacy A3 plot side-by-side with our replica render will settle this.
 3. **Verify default paper format per frame family.** Family A frames (1191×801, aspect ≈ 1.487) fit A3 landscape (420/297 ≈ 1.414) with a small aspect mismatch — likely aspect-preserving fit. Family B frames (~588×675, aspect ≈ 0.87) are portrait — probably A4 portrait (210/297 ≈ 0.71) or a half-A3.
-4. **Locate the plotter driver's paper table.** ES680 must map "A3" → 420 × 297 mm somewhere; find that table (probably a system-level config, not an Ingres table).
+4. **Locate the plotter driver's paper table.** legacy must map "A3" → 420 × 297 mm somewhere; find that table (probably a system-level config, not an Ingres table).
 5. **Verify the `i` modifier's exact semantics on `rt`.** Confirm from source scripts (`txpExtractData.pl` etc.) whether `rt,i` sizes are always symbol-local coordinates or plotter-canvas coordinates.

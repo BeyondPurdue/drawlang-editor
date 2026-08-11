@@ -14,8 +14,8 @@ This document is the single source of truth for the next editor. When you approv
 1. **API is the only path.** Every mark on every canvas is produced by a `POST` of one or more drawlang statements to a single endpoint. The graphical editor, the CLI, the voice/AI input all use exactly this endpoint. There is no other primitive.
 2. **No new opcodes, ever.** Drawlang v0.6 stays locked. If a feature can't be expressed in v0.6, we discuss a formal extension before touching the spec — never a workaround in the editor.
 3. **KISS.** Anything more complex than the simplest working answer needs to be justified. The default answer is the simple one.
-4. **The word "Siemens" does not appear in the public repo.** Anywhere. Comments, code, examples, tests, frames.
-5. **Coordinates are ES680-native.** Origin bottom-left, Y up, integer units. Same as drawlang.
+4. **No vendor name appears in the public repo.** Anywhere. Comments, code, examples, tests, frames.
+5. **Coordinates are drawlang-native.** Origin bottom-left, Y up, integer units.
 6. **No decoration.** No stock icons, no gradients, no ornamentation. This is an engineering tool, not a design tool.
 
 ---
@@ -49,7 +49,7 @@ Both surfaces are driven by the same drawlang, the same database, and the same A
 **Purpose:** Give the user a coarse, sayable coordinate ("G5") for placing things by mouse, keyboard, or voice. The server never sees "G5" — it only sees drawlang.
 
 - **Columns:** 1..28, left to right
-- **Rows:** A..N (14 letters, top to bottom), matching ES680 convention
+- **Rows:** A..N (14 letters, top to bottom), matching legacy engineering-drawing convention
 - **Cell size:** 1080 / 28 ≈ **38.57 × 38.57 drawlang units — perfect squares**
 - **Grid origin:** the useful inner drawing area's top-left corner, offset by the border strip
 - **Cell "G5" resolves** to the center of column 5, row G, in drawlang coordinates
@@ -309,25 +309,20 @@ Example: a `motor` group placed such that its origin resolves to grid cell G5 on
 
 ### 9.1 Rename
 
-- **Concept**: what used to be called "the ES680 group / Siemens group" is now called simply **Group**.
-- **Class/file names in public repo** using "Siemens" or "ES680" as a namespace get renamed to neutral names. Example: `SiemensFrame` → `Frame`. `siemens_group.py` → `group.py`.
+- **Concept**: the group-of-drawlang-statements idea is called simply **Group**.
+- **Class/file names in public repo** using a vendor namespace are renamed to neutral names. This scrub is complete in Step 1.
 - Private research repo is not touched.
 
-### 9.2 Scrub
+### 9.2 Scrub (completed in Step 1)
 
-- `grep -RIln 'Siemens\|SIEMENS\|siemens'` across the public repo.
-- Every hit is either removed or replaced with a neutral term:
-  - Product names: dropped.
-  - Vendor references in comments: dropped, keep the behavior description.
-  - Test fixtures whose filename contains the word: renamed.
-- Two files get special attention:
-  - `frames/a3-empty.drawlang` — the "SIEMENS AG" text on the frame is already replaced with "BM Global A.S." in your uploaded revision. I'll port that in.
-  - `README.md` — rewritten to describe drawlang + editor without any vendor reference.
+- Vendor references removed from every file (README, docs, spec, spec history, code, comments, tests, diagrams, frames).
+- Trademark disclaimer removed from README and spec entirely.
+- Vendor company name on both A3 frames replaced with "BM Global A.S.".
+- `.egg-info/` and `.pytest_cache/` build artifacts removed from disk.
 
 ### 9.3 Commit and deploy
 
-- One commit for the rename, one commit for the scrub. Both on `main`.
-- Deploy timer picks them up. `/health` will still report the new SHA.
+- One commit for the full Step 1 scrub. Deploy timer picks it up. `/health` reports the new SHA.
 
 ---
 
@@ -364,7 +359,7 @@ CREATE TABLE library_symbols (
 
 I go through these in order. **After each step I stop and show you the result. You approve, I move to the next.**
 
-1. **Rename + scrub.** Remove "Siemens" from the public repo. Rename group concept to `Group`. One PR, review-only diff first, then merge.
+1. **Rename + scrub.** Remove vendor names from the public repo. Rename group concept to `Group`. Done in a single commit; verify with diff before deploy.
 2. **Frame rewrite (v3).** Rewrite `frames/a3-empty.drawlang`:
    - Replace border label grid with **A..N × 1..28** (28 columns, 14 square rows, cells ~38.57 units).
    - Fix copyright block (no commas inside strings; correct top-to-bottom line order).
@@ -389,7 +384,7 @@ Each step is ~1 to 2 half-day sessions of work with tests. Total: ~2 weeks of fo
 - **Multi-page projects.** For now, one canvas = one drawing. When you need multi-page, we'll add a `projects` table and page ordering — no other change needed.
 - **Version history per canvas.** Not in v3. Undo works within a session; permanent versioning is a later addition.
 - **Access control.** Assumes the editor is behind existing session auth. Multi-user editing on the same canvas is not attempted.
-- **Import of Siemens plans.** The analysis viewer we already have stays as-is at `/plans`. It is not part of the editor.
+- **Import of legacy plans.** The analysis viewer we already have stays as-is at `/plans`. It is not part of the editor.
 - **New drawlang opcodes.** Not now, not later. Section 1 rule 2.
 
 ---

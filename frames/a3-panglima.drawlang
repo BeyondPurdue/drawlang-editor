@@ -1,4 +1,4 @@
-# ES680 A3 Frame — Panglima 99ADA17GS010M (example fill)
+# A3 Frame — Panglima 99ADA17GS010M (example fill)
 
 ma,0,0;
 mr,5,75;
@@ -110,7 +110,7 @@ tx,0,Date;
 ma,0,0;
 mr,567,50;
 tz,14;
-tx,0,SIEMENS AG;
+tx,0,BM Global A.S.;
 tz,8;
 mr,122,-32;
 tx,0,Function diagram individual level;

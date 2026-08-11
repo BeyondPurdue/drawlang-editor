@@ -12,7 +12,7 @@ Locks in the v0.6 backend semantics:
   * Stroke with no `,c<n>` defaults to ink; stroke `,c0` falls back to ink so it stays
     visible.
 
-Motivated by real ES680 pic_ex symbols (e.g. `pic_ex -1`: `rt,1224,854,f`,
+Motivated by real legacy pic_ex symbols (e.g. `pic_ex -1`: `rt,1224,854,f`,
 `rt,1222,852,f`) whose bare `,f` rectangles were being rendered as large solid
 black blocks under v0.5, which is not what the source HMI does.
 """
@@ -169,7 +169,7 @@ def test_dl_c2_strokes_with_palette_2():
 
 
 # ---------------------------------------------------------------------------
-# Real ES680 pattern: pic_ex -1 title-block rectangles
+# Real legacy pattern: pic_ex -1 title-block rectangles
 # ---------------------------------------------------------------------------
 
 
@@ -184,7 +184,7 @@ def test_real_picex_minus_1_title_block_pattern_is_outline_only():
         assert _attr(r, "stroke") == "#000000", f"stroke should still be visible: {r}"
 
 
-def test_real_es680_ci_t_pattern_still_renders_outline_only():
+def test_real_legacy_ci_t_pattern_still_renders_outline_only():
     """The HHY01D pattern: ci,2,t is an outline circle in ink."""
     svg = render("ci,2,t;")
     circle = _first_shape(svg)

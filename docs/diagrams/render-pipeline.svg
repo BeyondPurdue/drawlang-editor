@@ -18,7 +18,7 @@
     </marker>
   </defs>
 
-  <text x="500" y="30" text-anchor="middle" class="title">ES680 Rendering Pipeline</text>
+  <text x="500" y="30" text-anchor="middle" class="title">Rendering Pipeline</text>
   <text x="500" y="52" text-anchor="middle" class="caption">Database → PageDescription → three output backends</text>
 
   <!-- Sources -->

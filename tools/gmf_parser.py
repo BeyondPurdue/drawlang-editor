@@ -1,5 +1,5 @@
 """
-gmf_parser.py — Reference parser for ES680 .gmf (get_gmf output) files.
+gmf_parser.py — Reference parser for legacy .gmf drawing archive files.
 
 Grounded in 15 real production files from project 4640
 (YFR "individual level" DTK=1 and YFH "overview level" DTK=3).
@@ -7,7 +7,9 @@ Grounded in 15 real production files from project 4640
 Grammar summary
 ---------------
 File   := banner_line NEWLINE  program
-banner := "es680" WS sheet_size WS source_path
+banner := format_marker WS sheet_size WS source_path
+           # format_marker is either "drawlang" (current) or the legacy
+           # marker used by older backup archives, accepted for compatibility
 program := (statement)*
 statement := opcode ("," arg)* ";"
 
@@ -45,9 +47,9 @@ from typing import Iterable
 
 @dataclass
 class Banner:
-    format: str          # "es680"
+    format: str          # "drawlang" or legacy marker
     sheet_size: str      # "A4"
-    source_path: str     # e.g. "/tmp/get_gmf/es680/4640.1.99ada11gs010m.gmf"
+    source_path: str     # e.g. "/tmp/get_gmf/legacy/4640.1.99ada11gs010m.gmf"
 
     @property
     def project(self) -> str | None:
@@ -115,8 +117,10 @@ _MODIFIER_LETTERS = {'f', 'i', 't'}
 
 _OPCODES = {'ma', 'mr', 'dl', 'rt', 'ci', 'tz', 'tx', 'sb', 'eb'}
 
-# banner: "es680 <size> <path>"
-_BANNER_RE = re.compile(r'^(es680)\s+(\S+)\s+(.+?)\s*$')
+# banner: "<format_marker> <size> <path>"
+# Accepts current marker ("drawlang") and legacy marker ("es680") for
+# backward compatibility with archived backup files.
+_BANNER_RE = re.compile(r'^(drawlang|es680)\s+(\S+)\s+(.+?)\s*$')
 
 # opcode at the start of a statement; whitespace-tolerant
 _OP_RE = re.compile(r'\s*([a-z]{2})\s*')

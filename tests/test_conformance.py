@@ -88,7 +88,7 @@ class TestNumbers:
     def test_v03_numeric_accepts_int_and_decimal(self):
         """Spec §3.4 (v0.3): one numeric type, INT. Decimal-point literals
         are accepted and rounded half-toward-positive-infinity."""
-        # Bare ints work (this is what real ES680 data uses)
+        # Bare ints work (this is what real legacy data uses)
         assert parse("tx,0,Hello;")[0].args == [0, "Hello"]
         assert parse("tx,90,V;")[0].args == [90, "V"]
         assert parse("tx,-90,V;")[0].args == [-90, "V"]
@@ -247,7 +247,7 @@ class TestModifiers:
 
         v0.3 restricted ,i to `rt`. v0.4 extends it to `dl` (invisible line
         that still advances the pen and contributes to the bounding box) to
-        match real ES680 pic_ex usage.
+        match real legacy pic_ex usage.
         """
         parse("rt,10,10,i;")
         parse("dl,10,10,i;")  # v0.4: no longer raises

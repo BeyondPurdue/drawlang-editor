@@ -14,7 +14,7 @@
     .legend { font-size: 11px; fill: #28251D; }
   </style>
 
-  <text x="550" y="28" text-anchor="middle" class="title">ES680 Data Model — table families</text>
+  <text x="550" y="28" text-anchor="middle" class="title">Data Model — table families</text>
   <text x="550" y="48" text-anchor="middle" class="caption">shared catalog (read-only) · per-plant user tables (read-write) · cross-references</text>
 
   <!-- Legend -->

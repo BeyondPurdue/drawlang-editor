@@ -38,19 +38,19 @@ SPEC_VERSION = "0.6"
 # v0.4: `dl` accepts the `i` (invisible) modifier, matching `rt` and `ci`.
 #        An invisible line advances the pen and contributes both endpoints to
 #        the bounding box but emits no visible mark.
-# v0.5: `ci` and `rt` accept the `t` modifier, observed in real ES680 pic_ex
+# v0.5: `ci` and `rt` accept the `t` modifier, observed in real legacy pic_ex
 #        symbols (~77 occurrences in the shipped library). Semantics are
 #        currently reserved: parsers MUST accept `,t` on ci and rt; interpreters
 #        MUST NOT reject; the reference backend renders the shape identically
 #        to the same statement without `,t`. A future spec revision may attach
-#        visible semantics to `,t` once the ES680 source documentation is
+#        visible semantics to `,t` once the source documentation is
 #        cross-referenced. See spec §8.1 and §14.
 # v0.6: Palette model made explicit. Palette index 0 is reserved as `paper`
 #        (the background/non-color slot). A fill that resolves to palette 0
 #        renders as invisible (`fill="none"` in the SVG backend). A bare `,f`
 #        modifier with no `,c<n>` defaults its fill index to 0 (paper), so
-#        `rt,W,H,f` and `ci,r,f` draw an outline only — matching the historical
-#        Siemens ES680 HMI behaviour, where palette 0 was the workstation
+#        `rt,W,H,f` and `ci,r,f` draw an outline only — matching legacy HMI
+#        vector-drawing behaviour, where palette 0 was the workstation
 #        background colour. Stroke and text default to palette index 1 (ink,
 #        black in the reference palette) when no `,c<n>` is present, so a bare
 #        `dl,dx,dy` still draws a visible line. `,f,c0` is an explicit paper

@@ -1,6 +1,6 @@
 # Drawing Language Specification
 
-**Project:** ES680 Drawing System — Universal Vector Drawing Editor
+**Project:** Drawlang Drawing System — Universal Vector Drawing Editor
 **Owner:** BM Global
 **Document status:** LOCKED v0.2 — frozen 2026-08-09. Any change requires a new version (v0.3).
 

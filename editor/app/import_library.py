@@ -232,7 +232,7 @@ def _strip_leading_digits(s: str) -> str:
 
 def parse_obj_f(text: str) -> list[dict]:
     """
-    obj_f.csn columns (from es680-damo/kap2_1/obj_f.htm):
+    obj_f.csn columns (from legacy-damo/kap2_1/obj_f.htm):
         1  uas       c6     Plan type (YFR = FUP overview/detail)
         2  nam       vch20  Plan name (KKS tag)
         3  autor     vch15  Last-editor name
@@ -275,7 +275,7 @@ def parse_obj_f(text: str) -> list[dict]:
 
 def parse_obj_g(text: str) -> list[dict]:
     """
-    obj_g.csn columns (from es680-damo/kap2_1/obj_g.htm):
+    obj_g.csn columns (from legacy-damo/kap2_1/obj_g.htm):
         1  plan_id   i4    Plan owning this placement
         2  loc_id    i2    Local instance id
         3  pic_id    i2    pic_ex / pic_b identifier
@@ -391,7 +391,7 @@ def pic_b_to_cmd(pic_b_row: dict) -> str:
 
 def _is_stub_cmd(cmd: str) -> bool:
     """A pic_b cmd is a 'stub' (empty template) when its only pen instruction
-    is a zero-distance move — the ES680 editor stores project-scope symbols
+    is a zero-distance move — the legacy editor stores project-scope symbols
     (PROJPICT, etc.) with a 'mr,0,0;' body because their real content is
     injected per-project at draw time. Render these with a visible fallback.
     """

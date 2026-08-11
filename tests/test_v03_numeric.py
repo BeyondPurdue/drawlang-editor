@@ -17,7 +17,7 @@ class TestSpecVersion:
 
 
 class TestIntegerAnglesInTx:
-    """The bug that motivated v0.3: real ES680 backup data uses `tx,0,`.
+    """The bug that motivated v0.3: real legacy backup data uses `tx,0,`.
     This must parse cleanly and give an int arg."""
 
     def test_bare_integer_angle(self):

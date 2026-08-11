@@ -1,4 +1,4 @@
-# ES680 Drawing System — Editor v2 Architecture
+# legacy Drawing System — Editor v2 Architecture
 
 **Status:** DRAFT v0.1 · 2026-08-10
 **Owner:** BM Global
@@ -34,7 +34,7 @@ Companion documents:
 1. **Frame-first workflow.** User opens the editor, picks a **frame template** (A3 BM Global or A4 plain), and the canvas immediately shows the frame with all its title-block placeholders. No blank white rectangles.
 2. **Edit the title-block easily.** Click any field in the title-block (copyright, project name, KKS, revision, date, author, page counter) and edit it inline. Changes persist.
 3. **Place pictograms on the drawing area.** Drag from a pictogram palette onto the canvas. Position and rotate.
-4. **Round-trip with the ES680 model.** What we save is legal ES680 data — a set of rows in `obj_f`, `obj_g`, `obj_d`, `schr_d` that a real ES680 print pipeline could produce a PDF from.
+4. **Round-trip with the legacy model.** What we save is legal legacy data — a set of rows in `obj_f`, `obj_g`, `obj_d`, `schr_d` that a real legacy print pipeline could produce a PDF from.
 5. **Export.** Save as `.json` (native), PDF (via PostScript), or SVG (browser preview).
 
 ### 1.2 Explicit non-goals for v1
@@ -44,7 +44,7 @@ Companion documents:
 - No wire routing yet. `ver_b` rows are readable but not editable in v1.
 - No `konnektor` cross-page arrows editable in v1.
 - No signal cross-reference (`zuli`) editing.
-- Only two frames at v1: **A3 (BM Global)** and **A4 (plain)**. Every other frame family (S1, Siemens A0, HMI, marshalling) is out of scope until v1 ships.
+- Only two frames at v1: **A3 (BM Global)** and **A4 (plain)**. Every other frame family (S1, large-format A0, HMI, marshalling) is out of scope until v1 ships.
 
 ### 1.3 Guiding principles
 
@@ -208,7 +208,7 @@ type TitleBlockField = {
 
 ### 4.2 Server-side SQLite schema
 
-Identical column names to ES680, so cross-referencing the notes is one-to-one. `PRIMARY KEY` where the DAMO says so, `INTEGER` for `i2`/`i4`, `TEXT` for `vch*`. See [`../notes/03-user-project-tables.md`](../notes/03-user-project-tables.md) for the full column list.
+Identical column names to legacy, so cross-referencing the notes is one-to-one. `PRIMARY KEY` where the DAMO says so, `INTEGER` for `i2`/`i4`, `TEXT` for `vch*`. See [`../notes/03-user-project-tables.md`](../notes/03-user-project-tables.md) for the full column list.
 
 ---
 
@@ -525,11 +525,11 @@ Every action sets `saveState = "dirty"` and schedules a debounced `save()` after
 
 ### 9.1 Native (JSON)
 
-Each drawing is one JSON file matching the `Drawing` type in §4.1. Extension: `.es680.json`. Hand-editable.
+Each drawing is one JSON file matching the `Drawing` type in §4.1. Extension: `.legacy.json`. Hand-editable.
 
-### 9.2 ES680 round-trip (`.sag`)
+### 9.2 legacy round-trip (`.sag`)
 
-A "Save as ES680 dump" export writes the drawing as a set of TAB-separated `.sag` files (one per table) using the length-prefix Ingres varchar encoding documented in [`../notes/03-user-project-tables.md`](../notes/03-user-project-tables.md). A real ES680 install can `loaddb` these back into Ingres.
+A "Save as legacy dump" export writes the drawing as a set of TAB-separated `.sag` files (one per table) using the length-prefix Ingres varchar encoding documented in [`../notes/03-user-project-tables.md`](../notes/03-user-project-tables.md). A real legacy install can `loaddb` these back into Ingres.
 
 Not in v1. Documented here so the data model choices don't paint us into a corner.
 
@@ -579,7 +579,7 @@ Nothing gets built until we agree on these.
 |---|---|---|---|
 | 1 | Frontend framework | React (Vite + Tailwind + shadcn/ui) / SolidJS / Svelte | **React** — matches the existing webapp template we already know |
 | 2 | Backend framework | Keep FastAPI / switch to Node/Express | **Keep FastAPI** — the `drawlang` package is Python |
-| 3 | Storage | SQLite / Postgres / plain JSON files | **SQLite** — no ops overhead, easy backup, matches ES680 shape |
+| 3 | Storage | SQLite / Postgres / plain JSON files | **SQLite** — no ops overhead, easy backup, matches legacy shape |
 | 4 | Canvas technology | Inline SVG / Canvas 2D / WebGL | **Inline SVG** — pen instructions map directly, DOM inspection helps debugging |
 | 5 | Where to run | Local desktop (Tauri) / self-hosted web (Docker on Hetzner) / published to `pplx.app` | **Hetzner Docker** — matches your existing deploy pattern |
 | 6 | Auth | None (single-user local) / basic auth / SSO | **None for v1** — single user, then decide |

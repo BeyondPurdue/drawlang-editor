@@ -1,5 +1,5 @@
 """
-ES680 frame templates with editable title-block fields.
+legacy frame templates with editable title-block fields.
 
 A "frame" is a drawlang source file plus a field map. The field map lists
 every editable text slot (name, coordinate, description, default). Values are

@@ -109,7 +109,7 @@ function attachHotspots() {
   const svg = document.querySelector('#preview svg');
   if (!svg) return;
   const viewBox = svg.getAttribute('viewBox').split(' ').map(Number);
-  // ES680 coord system: origin at lower-left, y-up. SVG viewBox in "canonical" units matches drawlang units.
+  // legacy coord system: origin at lower-left, y-up. SVG viewBox in "canonical" units matches drawlang units.
   // Our svg output already flips Y. Hotspot: draw small rect at each field's (x, y) — need to convert.
 
   // The renderer emits svg with viewBox="-44.1 -926.1 1340.2 970.2" (from earlier probe).

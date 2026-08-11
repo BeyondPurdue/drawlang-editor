@@ -1,10 +1,10 @@
 # Drawing Language Specification
 
-**Project:** ES680 Drawing System — Universal Vector Drawing Editor
+**Project:** Drawlang Drawing System — Universal Vector Drawing Editor
 **Owner:** BM Global
 **Document status:** LOCKED v0.3 — frozen 2026-08-09. Any change requires a new version (v0.4).
 
-**Change from v0.2 → v0.3:** the FLOAT numeric type is removed. The language now has a single numeric type, INT (signed 16-bit). Every argument that v0.2 declared as FLOAT (`tx` angle, `ar` start and sweep) is now declared as INT. A literal written with a decimal point (`0.`, `90.`, `3.14`) is still accepted and is rounded half-toward-positive-infinity to the nearest integer. Every v0.2 program that used only whole-degree angles — which is every real ES680 program — remains a valid v0.3 program. Rationale: the 12,712 numeric-angle values in the ES680 backup are all whole degrees; not one is fractional. Sub-degree precision has no meaning on a technical schematic (1° tilt of a 100 mm label = 1.75 mm drift, below print resolution). Removing FLOAT collapses two numeric types into one, eliminates the emitter ambiguity that caused the Frame guide LexicalError, and matches the source system.
+**Change from v0.2 → v0.3:** the FLOAT numeric type is removed. The language now has a single numeric type, INT (signed 16-bit). Every argument that v0.2 declared as FLOAT (`tx` angle, `ar` start and sweep) is now declared as INT. A literal written with a decimal point (`0.`, `90.`, `3.14`) is still accepted and is rounded half-toward-positive-infinity to the nearest integer. Every v0.2 program that used only whole-degree angles — which is every real legacy program — remains a valid v0.3 program. Rationale: the 12,712 numeric-angle values in the legacy backup are all whole degrees; not one is fractional. Sub-degree precision has no meaning on a technical schematic (1° tilt of a 100 mm label = 1.75 mm drift, below print resolution). Removing FLOAT collapses two numeric types into one, eliminates the emitter ambiguity that caused the Frame guide LexicalError, and matches the source system.
 
 **Change from v0.1 → v0.2:** §3.5 now defines a line-comment syntax (`#` to end of line). This is an additive, backward-compatible change — every v0.1 program remains a valid v0.2 program. Rationale: templates and human-authored programs need somewhere to record source, intent, and provenance, which is a principle called out in §1.2.6 ("human-writable and human-readable").
 **Purpose:** Define the complete, self-contained mini-language that describes every visible mark on every drawing produced by this system. This document is the single source of truth for the language grammar, semantics, and interpretation. Both AI systems and human developers must be able to read this specification and implement a fully compliant interpreter without reference to any external system.
@@ -130,7 +130,7 @@ Three argument types exist:
   | `89.5` | `90` |
   | `89.499` | `89` |
 
-  Rule in one line: `stored = floor(written + 0.5)`. This is the classical school-math rule (half rounds *up* toward positive infinity), not Python's `round()` (which rounds half-to-even). It preserves compatibility with the ~3,610 `tx,90.` values in the real ES680 backup and any hand-written v0.1/v0.2 template, while keeping the runtime type system to a single integer type.
+  Rule in one line: `stored = floor(written + 0.5)`. This is the classical school-math rule (half rounds *up* toward positive infinity), not Python's `round()` (which rounds half-to-even). It preserves compatibility with the ~3,610 `tx,90.` values in the real legacy backup and any hand-written v0.1/v0.2 template, while keeping the runtime type system to a single integer type.
 
   Emitters generating new programs SHOULD write the canonical integer form (`tx,0,`) rather than `tx,0.`.
 
@@ -828,7 +828,7 @@ Current version: **0.3 (locked, 2026-08-09)**. Approved by the project owner as 
 
 **Version history:**
 
-- **0.3 (2026-08-09).** FLOAT type removed; the language has one numeric type, INT (signed 16-bit). `tx` and `ar` argument declarations changed from FLOAT to INT. Decimal-point literals are accepted and rounded half-toward-positive-infinity to the nearest integer (§3.4 grace clause). Backward-compatible with every real ES680 program and every v0.1/v0.2 program that used only whole-degree angles.
+- **0.3 (2026-08-09).** FLOAT type removed; the language has one numeric type, INT (signed 16-bit). `tx` and `ar` argument declarations changed from FLOAT to INT. Decimal-point literals are accepted and rounded half-toward-positive-infinity to the nearest integer (§3.4 grace clause). Backward-compatible with every real legacy program and every v0.1/v0.2 program that used only whole-degree angles.
 - **0.2 (2026-08-09).** Added line-comment syntax to §3.5. Additive; every v0.1 program is a valid v0.2 program.
 - **0.1 (2026-08-09).** Initial locked release. Seven Core opcodes, four Extension opcodes, four modifiers. No comments.
 

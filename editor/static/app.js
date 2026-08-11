@@ -363,7 +363,7 @@ $("example-search").addEventListener("input", (e) => {
 });
 
 // ---------------------------------------------------------------------------
-// Preview pan + zoom (native 1:1 by default, ES680-style)
+// Preview pan + zoom (native 1:1 by default, legacy-style)
 //   scale  = CSS transform scale factor (1.0 = 1 unit ↔ 1 CSS px)
 //   tx, ty = translation in CSS px (top-left corner offset)
 //   Content coord (cx, cy) maps to screen (cx*scale + tx, cy*scale + ty).

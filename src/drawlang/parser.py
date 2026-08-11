@@ -21,7 +21,7 @@ Key design notes tied to the spec:
 - Spec §3.4 (v0.3): the language has ONE numeric type, INT (signed 16-bit).
   A literal written with a decimal point (`0.`, `90.`, `3.14`) is accepted
   and rounded half-toward-positive-infinity to the nearest int. This matches
-  real ES680 backup data (`tx,0,`) and rejects nothing an ES680 emitter
+  real legacy backup data (`tx,0,`) and rejects nothing a legacy emitter
   would produce.
 - Spec §3.6: opcodes and modifiers are lowercase; any uppercase form is a
   LexicalError.

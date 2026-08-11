@@ -1,4 +1,4 @@
-# ES680 A3 Frame — extracted from Panglima 99ADA17GS010M
+# A3 Frame — extracted from Panglima 99ADA17GS010M
 # 595 statements. Border, grid A-F x 1-28, copyright, title block field labels.
 # Editable fields (plant, customer, KKS, revision, dates, initials) are blank.
 
@@ -112,7 +112,7 @@ tx,0,Date;
 ma,0,0;
 mr,567,50;
 tz,14;
-tx,0,SIEMENS AG;
+tx,0,BM Global A.S.;
 tz,8;
 mr,122,-32;
 tx,0,Function diagram individual level;
