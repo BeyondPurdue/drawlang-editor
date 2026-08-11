@@ -57,6 +57,10 @@ def _init_storage() -> None:
     storage.init()
     _canvases.init()
     _library.init()
+    # v0.7: frames are DB-backed. init() applies schema and seeds from
+    # legacy on-disk frames on first run.
+    from app import frames as _frames_init
+    _frames_init.init()
     # Sweep any pre-DB filesystem drawings into the DB, once.
     legacy = Path(__file__).resolve().parent.parent / "user_drawings"
     imported = storage.import_legacy_files(legacy)
@@ -619,6 +623,62 @@ def api_render_frame(frame_id: str, req: FrameValues) -> JSONResponse:
         "fields": composed["fields"],
         "drawlang": composed["drawlang"],
     })
+
+
+class FrameCreateRequest(BaseModel):
+    id: str
+    name: str
+    drawlang: str
+    fields: list[dict] = []
+    source: str = ""
+
+
+class FramePatchRequest(BaseModel):
+    name: str | None = None
+    drawlang: str | None = None
+    fields: list[dict] | None = None
+    source: str | None = None
+
+
+@app.post("/api/frames")
+def api_frame_create(req: FrameCreateRequest) -> JSONResponse:
+    """Create a new frame. Returns the created frame or 409 on id clash."""
+    try:
+        data = _frames_mod.create_frame(
+            frame_id=req.id,
+            name=req.name,
+            drawlang=req.drawlang,
+            fields=req.fields,
+            source=req.source,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return JSONResponse({"ok": True, "frame": data})
+
+
+@app.patch("/api/frames/{frame_id}")
+def api_frame_update(frame_id: str, req: FramePatchRequest) -> JSONResponse:
+    """Patch a frame's name/drawlang/fields/source."""
+    try:
+        data = _frames_mod.update_frame(
+            frame_id,
+            name=req.name,
+            drawlang=req.drawlang,
+            fields=req.fields,
+            source=req.source,
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"frame {frame_id!r} not found")
+    return JSONResponse({"ok": True, "frame": data})
+
+
+@app.delete("/api/frames/{frame_id}")
+def api_frame_delete(frame_id: str) -> JSONResponse:
+    """Delete a frame. Canvases referencing it keep their frame_id."""
+    ok = _frames_mod.delete_frame(frame_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"frame {frame_id!r} not found")
+    return JSONResponse({"ok": True})
 
 
 # ---------------------------------------------------------------------------

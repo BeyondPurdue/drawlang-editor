@@ -742,6 +742,11 @@ async function dropLibraryHere(slug, x, y) {
   }
 }
 
+// v0.7: Frames tab — hook the create button (element may not exist in
+// older HTML snapshots; guard with a null check).
+const _newFrameBtn = document.getElementById("new-frame-create");
+if (_newFrameBtn) _newFrameBtn.addEventListener("click", createFrameFromSidebar);
+
 $("save-symbol-btn").addEventListener("click", async () => {
   const name = $("save-symbol-name").value.trim();
   if (!name) return alert("Name?");
@@ -928,7 +933,72 @@ function setSidebarTab(tab) {
   });
   $("opcodes-list").style.display = tab === "primitives" ? "" : "none";
   $("symbols-panel").style.display = tab === "symbols" ? "" : "none";
+  const framesPanel = document.getElementById("frames-panel");
+  if (framesPanel) framesPanel.style.display = tab === "frames" ? "" : "none";
+  if (tab === "frames") refreshFramesSidebar();
 }
+
+// v0.7 Frames tab — list, create, delete. Uses the DB-backed /api/frames.
+async function refreshFramesSidebar() {
+  const host = $("frames-list");
+  if (!host) return;
+  try {
+    const d = await api("/api/frames");
+    if (!d.frames || d.frames.length === 0) {
+      host.innerHTML = '<div class="status">No frames yet.</div>';
+      return;
+    }
+    host.innerHTML = d.frames.map((f) => `
+      <div class="prim-item" data-frame-id="${escapeAttr(f.id)}">
+        <span class="prim-name">${escapeAttr(f.name || f.id)}</span>
+        <span class="prim-meta">${f.field_count || 0} fields</span>
+        <button class="frame-del" data-del="${escapeAttr(f.id)}" title="Delete frame" style="font-size:10px;padding:1px 4px">✕</button>
+      </div>
+    `).join("");
+    host.querySelectorAll("[data-del]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.del;
+        if (!confirm(`Delete frame "${id}"? Canvases using it keep their frame_id.`)) return;
+        await api(`/api/frames/${encodeURIComponent(id)}`, { method: "DELETE" });
+        await refreshFramesSidebar();
+        await loadFrameList();
+      });
+    });
+  } catch (e) {
+    host.innerHTML = `<div class="status err">${escapeAttr(e.message)}</div>`;
+  }
+}
+
+async function createFrameFromSidebar() {
+  const id = $("new-frame-id").value.trim();
+  const name = $("new-frame-name").value.trim();
+  const dl = $("new-frame-dl").value;
+  const status = $("frames-status");
+  if (!id || !name || !dl.trim()) {
+    status.textContent = "id, name and drawlang are all required.";
+    status.className = "status err";
+    return;
+  }
+  try {
+    await api("/api/frames", {
+      method: "POST",
+      body: JSON.stringify({ id, name, drawlang: dl, fields: [], source: "user" }),
+    });
+    status.textContent = `Created ${id}.`;
+    status.className = "status ok";
+    $("new-frame-id").value = "";
+    $("new-frame-name").value = "";
+    $("new-frame-dl").value = "";
+    await refreshFramesSidebar();
+    await loadFrameList();
+  } catch (e) {
+    status.textContent = e.message;
+    status.className = "status err";
+  }
+}
+
+
 
 // ---- modal ----
 

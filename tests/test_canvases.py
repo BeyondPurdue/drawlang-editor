@@ -25,11 +25,11 @@ def temp_db(monkeypatch):
     import importlib
     import sys
 
-    for mod in ("editor.app.storage", "editor.app.canvases"):
+    for mod in ("editor.app.storage", "editor.app.canvases", "editor.app.frames"):
         if mod in sys.modules:
             del sys.modules[mod]
 
-    from editor.app import storage, canvases
+    from editor.app import storage, canvases, frames
 
     # Reset any cached connection from a previous test
     storage._conn = None
@@ -37,7 +37,10 @@ def temp_db(monkeypatch):
 
     storage.init()
     canvases.init()
-    yield {"storage": storage, "canvases": canvases, "db_path": db_path}
+    # v0.7: frames moved to the DB. init() seeds legacy on-disk frames so
+    # tests referencing 'a3-grid' etc. keep working.
+    frames.init()
+    yield {"storage": storage, "canvases": canvases, "frames": frames, "db_path": db_path}
     if storage._conn is not None:
         storage._conn.close()
         storage._conn = None

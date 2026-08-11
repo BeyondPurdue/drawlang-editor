@@ -110,6 +110,7 @@
     <div class="lib-tabs">
       <div class="lib-tab active" data-tab="primitives">Primitives</div>
       <div class="lib-tab" data-tab="symbols">Symbols</div>
+      <div class="lib-tab" data-tab="frames">Frames</div>
     </div>
     <div id="opcodes-list"></div>
     <div id="symbols-panel" style="display:none">
@@ -117,6 +118,16 @@
       <div id="primitives-list"></div>
       <div class="prim-cat">Saved symbols</div>
       <div id="library-list"></div>
+    </div>
+    <div id="frames-panel" style="display:none">
+      <div class="prim-cat">Existing frames</div>
+      <div id="frames-list"></div>
+      <div class="prim-cat" style="margin-top:8px">New frame</div>
+      <input type="text" id="new-frame-id" placeholder="id (e.g. a4-portrait)" style="width:100%;margin-bottom:4px" />
+      <input type="text" id="new-frame-name" placeholder="Display name" style="width:100%;margin-bottom:4px" />
+      <textarea id="new-frame-dl" placeholder="# drawlang source for the frame&#10;mr,0,0;&#10;rt,297,210;" rows="6" style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;margin-bottom:4px"></textarea>
+      <button id="new-frame-create" style="width:100%">Create frame</button>
+      <div class="status" id="frames-status"></div>
     </div>
     <h2>Save selection as symbol</h2>
     <input type="text" id="save-symbol-name" placeholder="Symbol name" style="width:100%;margin-bottom:4px" />
