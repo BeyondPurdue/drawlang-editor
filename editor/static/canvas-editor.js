@@ -88,6 +88,7 @@ async function renderCanvas() {
   $("svg-host").innerHTML = res.output;
   const svg = $("svg-host").querySelector("svg");
   state.svg = svg;
+  state.svgSource = res.output || "";
   if (svg) {
     // parse viewBox
     const vb = svg.getAttribute("viewBox");
@@ -465,6 +466,41 @@ $("save-symbol-btn").addEventListener("click", async () => {
 });
 
 $("render-btn").addEventListener("click", () => renderCanvas());
+
+// --------------------------------------------------------------------------
+// Export buttons
+// --------------------------------------------------------------------------
+function _downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+$("export-svg").addEventListener("click", () => {
+  if (!state.currentCanvas) { alert("Choose a canvas first"); return; }
+  if (!state.svgSource) { alert("Nothing rendered yet — click Render first"); return; }
+  _downloadBlob(new Blob([state.svgSource], { type: "image/svg+xml" }), `${state.currentCanvas}.svg`);
+});
+
+$("export-pdf").addEventListener("click", async () => {
+  if (!state.currentCanvas) { alert("Choose a canvas first"); return; }
+  try {
+    // Fetch the composed program (frame + body) then hand it to /export/pdf.
+    const progRes = await fetch(`/api/canvases/${state.currentCanvas}/program`);
+    if (!progRes.ok) throw new Error(await progRes.text());
+    const program = await progRes.text();
+    const res = await fetch("/export/pdf", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ program }),
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    _downloadBlob(await res.blob(), `${state.currentCanvas}.pdf`);
+  } catch (err) {
+    alert("PDF export failed: " + err.message);
+  }
+});
 
 // Frame picker: PATCH the canvas when the user changes the frame.
 $("frame-select").addEventListener("change", async (e) => {
