@@ -38,6 +38,7 @@ from app.import_library import (  # noqa: E402
     compose_plan_page,
 )
 from app import storage  # noqa: E402
+from app import canvases as _canvases  # noqa: E402
 
 
 app = FastAPI(title="Drawing Language Editor", version=SPEC_VERSION)
@@ -52,6 +53,7 @@ app.add_middleware(
 @app.on_event("startup")
 def _init_storage() -> None:
     storage.init()
+    _canvases.init()
     # Sweep any pre-DB filesystem drawings into the DB, once.
     legacy = Path(__file__).resolve().parent.parent / "user_drawings"
     imported = storage.import_legacy_files(legacy)
@@ -597,3 +599,92 @@ def api_render_frame(frame_id: str, req: FrameValues) -> JSONResponse:
         "fields": composed["fields"],
         "drawlang": composed["drawlang"],
     })
+
+
+# ---------------------------------------------------------------------------
+# Canvases API (Step 3: read-only; writes come in Step 4)
+# ---------------------------------------------------------------------------
+
+class CanvasCreateRequest(BaseModel):
+    name: str
+    frame_id: str | None = None
+    program: str = ""
+    slug: str | None = None
+
+
+@app.get("/api/canvases")
+def api_canvases_list() -> dict:
+    """List all canvases with statement counts."""
+    return {"canvases": _canvases.list_canvases()}
+
+
+@app.post("/api/canvases")
+def api_canvases_create(req: CanvasCreateRequest) -> dict:
+    """
+    Create a canvas. If `frame_id` is given and `program` is empty, the
+    canvas is seeded from the frame's drawlang source.
+    """
+    program = req.program or ""
+    if not program and req.frame_id:
+        try:
+            frame = _frames_mod.get_frame(req.frame_id, values={})
+            program = frame["drawlang"]
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=404, detail=f"frame {req.frame_id!r} not found"
+            )
+    try:
+        data = _canvases.create_canvas(
+            name=req.name,
+            frame_id=req.frame_id,
+            program=program,
+            slug=req.slug,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {"ok": True, **data}
+
+
+@app.get("/api/canvases/{id_or_slug}")
+def api_canvases_get(id_or_slug: str) -> dict:
+    """Return one canvas + all its statements in seq order."""
+    data = _canvases.get_canvas(id_or_slug)
+    if data is None:
+        raise HTTPException(status_code=404, detail="canvas not found")
+    return data
+
+
+@app.get("/api/canvases/{id_or_slug}/program", response_class=Response)
+def api_canvases_program(id_or_slug: str) -> Response:
+    """Reconstruct the drawlang program by joining statements in order."""
+    program = _canvases.get_canvas_program(id_or_slug)
+    if program is None:
+        raise HTTPException(status_code=404, detail="canvas not found")
+    return Response(content=program, media_type="text/plain")
+
+
+@app.post("/api/canvases/{id_or_slug}/render")
+def api_canvases_render(id_or_slug: str) -> dict:
+    """Render a canvas by joining its statements and running the interpreter."""
+    program = _canvases.get_canvas_program(id_or_slug)
+    if program is None:
+        raise HTTPException(status_code=404, detail="canvas not found")
+    try:
+        svg = render(program, backend="svg")
+    except DrawLangError as e:
+        return {
+            "ok": False,
+            "error": str(e),
+            "error_kind": type(e).__name__,
+            "statement_index": getattr(e, "statement_index", None),
+        }
+    return {"ok": True, "output": svg}
+
+
+@app.delete("/api/canvases/{id_or_slug}")
+def api_canvases_delete(id_or_slug: str) -> dict:
+    """Delete a canvas + all its statements."""
+    ok = _canvases.delete_canvas(id_or_slug)
+    if not ok:
+        raise HTTPException(status_code=404, detail="canvas not found")
+    return {"ok": True}
