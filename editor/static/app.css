@@ -381,6 +381,45 @@ html, body {
   background: #f0f7f8;
   border-left: 3px solid #01696f;
 }
+/* v0.7.2 toolbar hygiene: keep buttons on ONE line, no word-wrap. */
+.app header button {
+  white-space: nowrap;
+  font-size: 13px;
+  padding: 4px 10px;
+  line-height: 1.3;
+}
+
+/* Simple dropdown menu used by Frames ▾ and Export ▾ */
+.menu { position: relative; display: inline-block; }
+.menu > .menu-items {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
+  background: #fff;
+  border: 1px solid #d4d1ca;
+  border-radius: 4px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.10);
+  min-width: 180px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menu > .menu-items button {
+  background: transparent;
+  border: none;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 3px;
+  color: #28251d;
+}
+.menu > .menu-items button:hover {
+  background: #f0f7f8;
+}
+
 /* v0.7.2 text-editor: keyboard cursor row */
 #stmt-list .stmt-row.cursor {
   border-left: 3px solid #f6b93b;

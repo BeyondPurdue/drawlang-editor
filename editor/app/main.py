@@ -105,7 +105,7 @@ def health() -> dict:
         "status": "ok",
         "spec_version": SPEC_VERSION,
         "drawlang_version": pkg_version,
-        "semantic_layer": "0.7.2",  # v0.7.2 adds insert-statement-at-seq for text-editor UX (language grammar frozen at v0.6)
+        "semantic_layer": "0.7.3",  # v0.7.3 toolbar cleanup + Frames menu (language grammar frozen at v0.6)
         "git_sha": _GIT_SHA_CACHE,
     }
 

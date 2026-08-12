@@ -199,8 +199,17 @@ document.getElementById('export-pdf').addEventListener('click', async () => {
 (async function main() {
   try {
     const first = await loadFrameList();
-    if (first) await loadFrame(first);
-    else setStatus('No frames available', 'error');
+    // v0.7.2: honor ?frame=<id> so the canvas editor's "Edit current frame"
+    // and "New frame…" flows open directly to the right frame.
+    const wanted = new URLSearchParams(window.location.search).get('frame');
+    const target = wanted || first;
+    if (target) {
+      const sel = document.getElementById('frame-select');
+      if (sel && wanted) sel.value = wanted;
+      await loadFrame(target);
+    } else {
+      setStatus('No frames available', 'error');
+    }
   } catch (e) {
     setStatus('Init error: ' + e.message, 'error');
   }

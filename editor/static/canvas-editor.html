@@ -85,14 +85,28 @@
     <select id="frame-select" style="min-width:130px">
       <option value="">— none —</option>
     </select>
+    <div class="menu" id="frames-menu">
+      <button id="frames-menu-btn" title="Manage frames">Frames ▾</button>
+      <div class="menu-items" id="frames-menu-items" hidden>
+        <button data-frame-act="new">New frame…</button>
+        <button data-frame-act="edit">Edit current frame</button>
+        <button data-frame-act="import">Import from DrawLang…</button>
+      </div>
+    </div>
+    <input type="file" id="frame-import-file" accept=".drawlang,text/plain" style="display:none" />
     <button id="import-btn" title="Append a .drawlang file to this canvas">Import…</button>
     <input type="file" id="import-file" accept=".drawlang,text/plain" style="display:none" />
     <div class="spacer"></div>
-    <button id="undo-btn" title="Undo last edit (server-side history)" disabled>↶ Undo</button>
-    <button id="redo-btn" title="Redo last undone edit" disabled>↷ Redo</button>
-    <button id="export-dl" title="Download this canvas as .drawlang text">Export DrawLang</button>
-    <button id="export-svg" title="Download rendered SVG">Export SVG</button>
-    <button id="export-pdf" title="Download rendered PDF">Export PDF</button>
+    <button id="undo-btn" title="Undo last edit" disabled>Undo</button>
+    <button id="redo-btn" title="Redo last undone edit" disabled>Redo</button>
+    <div class="menu" id="export-menu">
+      <button id="export-menu-btn" title="Export…">Export ▾</button>
+      <div class="menu-items" id="export-menu-items" hidden>
+        <button id="export-dl">DrawLang</button>
+        <button id="export-svg">SVG</button>
+        <button id="export-pdf">PDF</button>
+      </div>
+    </div>
     <button id="render-btn" class="primary">Render</button>
   </header>
 

@@ -1316,6 +1316,99 @@ $("import-file").addEventListener("change", async (e) => {
 });
 
 // --------------------------------------------------------------------------
+// v0.7.2 dropdown menus (Frames ▾, Export ▾)
+// --------------------------------------------------------------------------
+function wireMenu(btnId, itemsId) {
+  const btn = $(btnId);
+  const items = $(itemsId);
+  if (!btn || !items) return;
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const willOpen = items.hasAttribute("hidden");
+    // Close every open menu first.
+    document.querySelectorAll(".menu-items").forEach((m) => m.setAttribute("hidden", ""));
+    if (willOpen) items.removeAttribute("hidden");
+  });
+  items.addEventListener("click", () => {
+    // Any click inside an item closes the menu.
+    items.setAttribute("hidden", "");
+  });
+}
+wireMenu("frames-menu-btn", "frames-menu-items");
+wireMenu("export-menu-btn", "export-menu-items");
+document.addEventListener("click", () => {
+  document.querySelectorAll(".menu-items").forEach((m) => m.setAttribute("hidden", ""));
+});
+
+// --------------------------------------------------------------------------
+// v0.7.2 Frames menu: New / Edit current / Import from DrawLang
+// All actions go through /api/frames — no local state.
+// --------------------------------------------------------------------------
+async function frameCreateFromText(program, defaults) {
+  const id = (defaults && defaults.id) || prompt("Frame id (unique, e.g. a3-title-block):");
+  if (!id) return null;
+  const name = prompt("Frame display name:", (defaults && defaults.name) || id);
+  if (name == null) return null;
+  try {
+    const res = await fetch("/api/frames", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id, name,
+        drawlang: program || "",
+        fields: [],
+        source: (defaults && defaults.source) || "editor",
+      }),
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    await loadFrameList();
+    $("frame-select").value = data.frame.id;
+    // Save the canvas -> frame binding so the new frame is used.
+    if (state.currentCanvas) {
+      await api(`/api/canvases/${state.currentCanvas}`, {
+        method: "PATCH",
+        body: JSON.stringify({ frame_id: data.frame.id }),
+      });
+      await loadCanvas(state.currentCanvas);
+    }
+    // Offer to open the frames editor so the user can fill fields.
+    if (confirm(`Frame "${data.frame.id}" created. Open the frames editor to edit its fields and DrawLang?`)) {
+      window.open(`/frames-editor?frame=${encodeURIComponent(data.frame.id)}`, "_blank");
+    }
+    return data.frame;
+  } catch (err) {
+    alert("Frame create failed: " + err.message);
+    return null;
+  }
+}
+
+document.querySelectorAll("[data-frame-act]").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const act = btn.dataset.frameAct;
+    if (act === "new") {
+      await frameCreateFromText("", null);
+    } else if (act === "edit") {
+      const fid = $("frame-select").value;
+      if (!fid) { alert("No frame is bound to this canvas. Pick one from the Frame dropdown first, or use New frame…"); return; }
+      window.open(`/frames-editor?frame=${encodeURIComponent(fid)}`, "_blank");
+    } else if (act === "import") {
+      $("frame-import-file").click();
+    }
+  });
+});
+
+$("frame-import-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  // Derive a default id from the filename (drop extension, kebab-case).
+  const base = file.name.replace(/\.drawlang$|\.txt$/i, "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, "");
+  await frameCreateFromText(text, { id: base, name: base, source: "import" });
+  e.target.value = "";
+});
+
+// --------------------------------------------------------------------------
 // Startup
 // --------------------------------------------------------------------------
 (async () => {
