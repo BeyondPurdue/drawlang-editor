@@ -58,18 +58,23 @@ def _admin_id() -> int | None:
 
 
 def _add_owner_column(table: str) -> None:
-    if _has_column(table, "owner_id"):
-        return
     admin = _admin_id()
     with _lock:
         c = _conn()
-        # SQLite ALTER TABLE cannot add a FOREIGN KEY column with a NOT NULL
-        # constraint on a table that already has rows without a default.
-        # So: nullable + backfill + create an index. That's enough for our
-        # per-user filtering; app-level checks enforce ownership.
-        c.execute(f"ALTER TABLE {table} ADD COLUMN owner_id INTEGER")
+        if not _has_column(table, "owner_id"):
+            # SQLite ALTER TABLE cannot add a FOREIGN KEY column with a NOT NULL
+            # constraint on a table that already has rows without a default.
+            # So: nullable + backfill + create an index. That's enough for our
+            # per-user filtering; app-level checks enforce ownership.
+            c.execute(f"ALTER TABLE {table} ADD COLUMN owner_id INTEGER")
+        # Backfill every time apply() runs so admin ownership survives even
+        # when the column pre-existed (e.g. added by a domain init() before
+        # auth.init() had a chance to seed the admin user).
         if admin is not None:
-            c.execute(f"UPDATE {table} SET owner_id = ? WHERE owner_id IS NULL", (admin,))
+            c.execute(
+                f"UPDATE {table} SET owner_id = ? WHERE owner_id IS NULL",
+                (admin,),
+            )
         c.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_owner ON {table}(owner_id)")
         c.commit()
 

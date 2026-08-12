@@ -15,9 +15,9 @@ import logging
 import sqlite3
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Callable
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import auth as _auth
 from . import canvases as _canvases
@@ -28,7 +28,18 @@ from . import storage as _storage
 log = logging.getLogger(__name__)
 
 
-DEMO_TZ = ZoneInfo("Europe/Madrid")
+# Minimal Debian/slim images may ship without /usr/share/zoneinfo; if we
+# cannot resolve Europe/Madrid, fall back to a fixed +01:00 offset. The
+# nightly reset will drift by an hour on DST switch days, but the app
+# will boot. Servers that need exact wall-clock alignment should install
+# `tzdata` (Debian) or the `tzdata` pip package.
+try:
+    DEMO_TZ = ZoneInfo("Europe/Madrid")
+except ZoneInfoNotFoundError:
+    log.warning(
+        "zoneinfo tzdata missing; falling back to fixed UTC+01:00 for demo reset"
+    )
+    DEMO_TZ = timezone(timedelta(hours=1))
 
 
 # ---------------------------------------------------------------------------
