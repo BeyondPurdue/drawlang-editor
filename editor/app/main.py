@@ -105,7 +105,7 @@ def health() -> dict:
         "status": "ok",
         "spec_version": SPEC_VERSION,
         "drawlang_version": pkg_version,
-        "semantic_layer": "0.7.1",  # v0.7.1 adds server-side undo/redo, Export DrawLang, duplicate_canvas (language grammar frozen at v0.6)
+        "semantic_layer": "0.7.2",  # v0.7.2 adds insert-statement-at-seq for text-editor UX (language grammar frozen at v0.6)
         "git_sha": _GIT_SHA_CACHE,
     }
 
@@ -873,6 +873,14 @@ class CanvasDuplicateRequest(BaseModel):
     name: str | None = None
 
 
+class StatementInsertRequest(BaseModel):
+    seq: int
+    opcode: str
+    args: str = ""
+    group_id: str | None = None
+    meaning_tag: str | None = None
+
+
 class ReplaceProgramRequest(BaseModel):
     program: str
 
@@ -927,6 +935,27 @@ def api_statements_reorder(id_or_slug: str, req: ReorderRequest) -> dict:
     if not ok:
         raise HTTPException(status_code=404, detail="canvas not found")
     return {"ok": True}
+
+
+@app.post("/api/canvases/{id_or_slug}/statements/insert")
+def api_statement_insert(id_or_slug: str, req: StatementInsertRequest) -> dict:
+    """v0.7 text-editor: insert a statement at an arbitrary seq position.
+
+    Existing rows at or past ``seq`` are pushed down by one. Used by the
+    statements panel to implement Enter-to-add-line-below and
+    Cmd/Ctrl+Enter-to-add-line-above without falling back to reorder-then-append.
+    """
+    inserted = _canvases.insert_statement_at(
+        id_or_slug,
+        seq=req.seq,
+        opcode=req.opcode,
+        args=req.args,
+        group_id=req.group_id,
+        meaning_tag=req.meaning_tag,
+    )
+    if inserted is None:
+        raise HTTPException(status_code=404, detail="canvas not found")
+    return {"ok": True, "statement": inserted}
 
 
 @app.put("/api/canvases/{id_or_slug}/program")

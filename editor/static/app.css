@@ -381,6 +381,16 @@ html, body {
   background: #f0f7f8;
   border-left: 3px solid #01696f;
 }
+/* v0.7.2 text-editor: keyboard cursor row */
+#stmt-list .stmt-row.cursor {
+  border-left: 3px solid #f6b93b;
+}
+#stmt-list .stmt-row:focus {
+  outline: 2px solid #01696f;
+  outline-offset: -2px;
+}
+#stmt-list .stmt-row { cursor: text; }
+#stmt-list .stmt-op, #stmt-list .stmt-args { cursor: text; }
 
 /* v0.7 cursor bubble — floating readout + transform buttons following the mouse
    whenever there is at least one selected canvas statement. */

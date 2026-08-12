@@ -7,6 +7,7 @@ const state = {
   currentCanvas: null,       // slug
   statements: [],
   selectedIds: new Set(),    // for multi-select
+  cursorId: null,            // v0.7.2 text-editor cursor row (statement id)
   library: [],
   primitives: [],
   opcodes: [],
@@ -370,15 +371,19 @@ function svgPoint(svg, evt) {
 function renderStatementList() {
   const el = $("stmt-list");
   if (!state.statements.length) {
-    el.innerHTML = '<div style="color:#7a7974">No statements yet. Add one below.</div>';
+    el.innerHTML = '<div style="color:#7a7974">No statements yet. Press Enter, click below, or add via the command box.</div>';
     return;
   }
+  // v0.7.2: text-editor mode — each row is a focusable line. tabindex="0"
+  // makes rows keyboard-navigable; a lightweight cursor pointer tracks
+  // which row is "current" for Enter-to-insert / ↑↓ / Backspace.
   el.innerHTML = state.statements.map((s) => {
     const sel = state.selectedIds.has(s.id) ? " selected" : "";
-    return `<div class="stmt-row${sel}" data-id="${s.id}">
+    const cur = (state.cursorId === s.id) ? " cursor" : "";
+    return `<div class="stmt-row${sel}${cur}" data-id="${s.id}" tabindex="0">
       <span class="stmt-seq">${s.seq}</span>
-      <span class="stmt-op" data-edit-op="${s.id}" title="Double-click to edit opcode">${escapeAttr(s.opcode)}</span>
-      <span class="stmt-args" data-edit-args="${s.id}" title="Double-click to edit args">${escapeAttr(s.args)}</span>
+      <span class="stmt-op" data-edit-op="${s.id}" title="Click to edit opcode (Enter=next line)">${escapeAttr(s.opcode)}</span>
+      <span class="stmt-args" data-edit-args="${s.id}" title="Click to edit args (Enter=next line)">${escapeAttr(s.args)}</span>
       <span class="stmt-del" data-del="${s.id}" title="Delete">✕</span>
     </div>`;
   }).join("");
@@ -389,18 +394,23 @@ function renderStatementList() {
       if (e.target.dataset.del) return;
       if (e.target.tagName === "INPUT") return;
       const id = parseInt(row.dataset.id);
+      state.cursorId = id;
       // v0.7: route through the shared selection helper so the canvas SVG,
       // statements list, and Edit Selected panel stay in sync.
       selectStatementById(id, e.shiftKey);
     });
-  });
-  // v0.7: inline edit — double-click the opcode or args cell to type a new
-  // value. Enter commits, Escape cancels. Uses the same PATCH endpoint the
-  // Edit Selected form uses so validation stays in one place.
-  el.querySelectorAll("[data-edit-op],[data-edit-args]").forEach((cell) => {
-    cell.addEventListener("dblclick", (e) => {
-      e.stopPropagation();
-      startInlineEdit(cell);
+    // v0.7.2: single-click on op/args cells starts inline edit (like clicking
+    // in a text editor to place the caret in that word).
+    row.querySelectorAll("[data-edit-op],[data-edit-args]").forEach((cell) => {
+      cell.addEventListener("click", (e) => {
+        e.stopPropagation();
+        state.cursorId = parseInt(row.dataset.id);
+        startInlineEdit(cell);
+      });
+    });
+    // Keep dblclick working as a redundant path.
+    row.querySelectorAll("[data-edit-op],[data-edit-args]").forEach((cell) => {
+      cell.addEventListener("dblclick", (e) => { e.stopPropagation(); startInlineEdit(cell); });
     });
   });
   el.querySelectorAll("[data-del]").forEach((btn) => {
@@ -413,6 +423,20 @@ function renderStatementList() {
       await reloadStatements();
     });
   });
+  // Restore focus + cursor highlight after a re-render so keyboard flow
+  // survives every reload.
+  if (state.cursorId != null) {
+    const cur = el.querySelector(`.stmt-row[data-id="${state.cursorId}"]`);
+    if (cur && document.activeElement !== cur && !document.querySelector(".stmt-inline-edit")) {
+      // Only auto-focus if focus is somewhere "neutral" (not inside an input
+      // elsewhere on the page). Otherwise we'd steal focus from a search box.
+      const active = document.activeElement;
+      const activeTag = active && active.tagName ? active.tagName.toLowerCase() : "";
+      if (activeTag !== "input" && activeTag !== "textarea" && !(active && active.isContentEditable)) {
+        cur.focus({ preventScroll: true });
+      }
+    }
+  }
 }
 
 function startInlineEdit(cell) {
@@ -429,31 +453,148 @@ function startInlineEdit(cell) {
   cell.replaceChildren(input);
   input.focus();
   input.select();
+  // Text-editor Enter: commit and add a fresh line right after this one.
+  // "pendingAction" lets keydown handlers hand off to blur/commit without
+  // racing the async patch call.
+  let pendingAction = null;
 
   const commit = async () => {
     const newVal = input.value.trim();
-    if (newVal === original) {
-      renderStatementList();
-      return;
+    if (newVal !== original) {
+      try {
+        await api(`/api/canvases/${state.currentCanvas}/statements/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ [field]: newVal }),
+        });
+      } catch (err) {
+        alert(`edit failed: ${err.message}`);
+        pendingAction = null;
+        await reloadStatements();
+        return;
+      }
     }
-    try {
-      await api(`/api/canvases/${state.currentCanvas}/statements/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ [field]: newVal }),
-      });
+    // v0.7.2: dispatch the requested follow-up action AFTER the patch.
+    if (pendingAction === "insertBelow") {
+      await insertLineAfter(id);
+    } else if (pendingAction === "insertAbove") {
+      await insertLineBefore(id);
+    } else if (pendingAction === "editArgs") {
+      // Tab from opcode → args: reload then re-open the args cell.
       await reloadStatements();
-    } catch (err) {
-      alert(`edit failed: ${err.message}`);
-      renderStatementList();
+      const argsCell = document.querySelector(`#stmt-list [data-edit-args="${id}"]`);
+      if (argsCell) startInlineEdit(argsCell);
+      return;
+    } else if (pendingAction === "editOp") {
+      await reloadStatements();
+      const opCell = document.querySelector(`#stmt-list [data-edit-op="${id}"]`);
+      if (opCell) startInlineEdit(opCell);
+      return;
+    } else {
+      await reloadStatements();
     }
   };
   const cancel = () => renderStatementList();
   input.addEventListener("blur", commit);
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); input.blur(); }
-    else if (e.key === "Escape") { input.removeEventListener("blur", commit); cancel(); }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      pendingAction = e.shiftKey ? "insertAbove" : "insertBelow";
+      input.blur();
+    } else if (e.key === "Escape") {
+      input.removeEventListener("blur", commit);
+      cancel();
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      pendingAction = e.shiftKey
+        ? (field === "args" ? "editOp" : null)
+        : (field === "opcode" ? "editArgs" : null);
+      input.blur();
+    }
   });
 }
+
+// --------------------------------------------------------------------------
+// v0.7.2 text-editor helpers — insert / navigate / delete rows via API only.
+// --------------------------------------------------------------------------
+async function insertLineAfter(id) {
+  const stmt = state.statements.find((s) => s.id === id);
+  const targetSeq = stmt ? stmt.seq + 1 : state.statements.length;
+  return insertLineAt(targetSeq);
+}
+
+async function insertLineBefore(id) {
+  const stmt = state.statements.find((s) => s.id === id);
+  const targetSeq = stmt ? stmt.seq : 0;
+  return insertLineAt(targetSeq);
+}
+
+async function insertLineAt(seq) {
+  if (!state.currentCanvas) return;
+  // Default new-line: mr,0,0 — a valid, no-visible-effect statement that the
+  // user can immediately overwrite. Same shape a blank line would have if
+  // drawlang supported them.
+  try {
+    const res = await fetch(`/api/canvases/${state.currentCanvas}/statements/insert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seq, opcode: "mr", args: "0,0" }),
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    state.cursorId = data.statement.id;
+    await reloadStatements();
+    // Auto-open the opcode cell so the user can immediately type the real opcode.
+    const opCell = document.querySelector(`#stmt-list [data-edit-op="${data.statement.id}"]`);
+    if (opCell) startInlineEdit(opCell);
+  } catch (err) {
+    alert("Insert failed: " + err.message);
+  }
+}
+
+function moveCursor(delta) {
+  if (!state.statements.length) return;
+  let idx = state.statements.findIndex((s) => s.id === state.cursorId);
+  if (idx === -1) idx = 0;
+  const next = Math.max(0, Math.min(state.statements.length - 1, idx + delta));
+  state.cursorId = state.statements[next].id;
+  renderStatementList();
+}
+
+async function deleteCurrentRow() {
+  if (state.cursorId == null || !state.currentCanvas) return;
+  const idx = state.statements.findIndex((s) => s.id === state.cursorId);
+  if (idx === -1) return;
+  const nextId = state.statements[idx + 1]?.id ?? state.statements[idx - 1]?.id ?? null;
+  await api(`/api/canvases/${state.currentCanvas}/statements/${state.cursorId}`, { method: "DELETE" });
+  state.cursorId = nextId;
+  await reloadStatements();
+}
+
+// Global keyboard handler for the statements panel. Fires only when focus
+// is on a .stmt-row (not on an <input>/<textarea> or the inline editor).
+document.addEventListener("keydown", (e) => {
+  const active = document.activeElement;
+  if (!active || !active.classList || !active.classList.contains("stmt-row")) return;
+  const id = parseInt(active.dataset.id);
+  if (isNaN(id)) return;
+  state.cursorId = id;
+  if (e.key === "Enter") {
+    e.preventDefault();
+    // Shift+Enter = insert above, Enter = insert below.
+    if (e.shiftKey) insertLineBefore(id); else insertLineAfter(id);
+  } else if (e.key === "ArrowDown") {
+    e.preventDefault(); moveCursor(1);
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault(); moveCursor(-1);
+  } else if (e.key === "Backspace" || e.key === "Delete") {
+    e.preventDefault(); deleteCurrentRow();
+  } else if (e.key === " " || e.key === "F2") {
+    // Space or F2 — spreadsheet-style "edit this cell" (opens the opcode).
+    e.preventDefault();
+    const opCell = active.querySelector("[data-edit-op]");
+    if (opCell) startInlineEdit(opCell);
+  }
+});
 
 // --------------------------------------------------------------------------
 // Selection transforms — computed purely on the args of existing opcodes.

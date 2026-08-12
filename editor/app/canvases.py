@@ -642,6 +642,65 @@ def append_statements(
     return _fetch_statements_by_ids(inserted_ids)
 
 
+def insert_statement_at(
+    id_or_slug: str | int,
+    *,
+    seq: int,
+    opcode: str,
+    args: str = "",
+    group_id: str | None = None,
+    meaning_tag: str | None = None,
+) -> dict | None:
+    """Insert a single statement at a specific seq position.
+
+    All existing statements with ``seq >= seq`` are shifted +1 first so the
+    new row lands at exactly the requested position. This is the text-editor
+    "press Enter to add a line above/below the current one" primitive.
+
+    ``seq`` is clamped to ``[0, max_seq + 1]``. Returns the inserted row, or
+    None if the canvas doesn't exist.
+    """
+    row = _resolve_canvas_row(id_or_slug)
+    if row is None:
+        return None
+    canvas_id = row[0]
+    now = time.time()
+    with _lock:
+        c = _conn()
+        c.execute("BEGIN;")
+        try:
+            _snapshot_pre_mutation(c, canvas_id, now)
+            # Clamp seq to a valid range.
+            max_seq_row = c.execute(
+                "SELECT COALESCE(MAX(seq), -1) FROM statements WHERE canvas_id = ?",
+                (canvas_id,),
+            ).fetchone()
+            max_seq = max_seq_row[0] if max_seq_row else -1
+            target_seq = max(0, min(int(seq), max_seq + 1))
+            # Shift all rows at or past target_seq up by one. Do it in
+            # descending order to avoid tripping the UNIQUE(canvas_id, seq)
+            # index if one exists in the future.
+            c.execute(
+                "UPDATE statements SET seq = seq + 1 "
+                "WHERE canvas_id = ? AND seq >= ?",
+                (canvas_id, target_seq),
+            )
+            cur = c.execute(
+                "INSERT INTO statements (canvas_id, seq, opcode, args, "
+                "group_id, meaning_tag, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (canvas_id, target_seq, opcode, args, group_id, meaning_tag, now),
+            )
+            new_id = cur.lastrowid
+            _touch_canvas(c, canvas_id, now)
+            c.execute("COMMIT;")
+        except Exception:
+            c.execute("ROLLBACK;")
+            raise
+    rows = _fetch_statements_by_ids([new_id])
+    return rows[0] if rows else None
+
+
 def append_program(id_or_slug: str | int, program: str) -> list[dict]:
     """Append a raw drawlang program to a canvas, one row per statement."""
     pairs = parse_program(program)
@@ -873,4 +932,5 @@ __all__ += [
     "redo",
     "history_depths",
     "duplicate_canvas",
+    "insert_statement_at",
 ]
