@@ -7,9 +7,13 @@
 <link rel="stylesheet" href="/static/app.css" />
 <style>
   body { margin: 0; font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f7f6f2; color: #28251d; }
-  .app { display: grid; grid-template-columns: 260px 1fr 320px; grid-template-rows: 48px 1fr; height: 100vh; }
-  header { grid-column: 1/-1; display: flex; align-items: center; padding: 0 16px; background: #fff; border-bottom: 1px solid #d4d1ca; gap: 8px; overflow-x: auto; }
-  header > * { flex-shrink: 0; }
+  .app { display: grid; grid-template-columns: 260px 1fr 320px; grid-template-rows: auto 1fr; height: 100vh; }
+  /* v0.7.6.3 — the toolbar wraps onto multiple rows on narrow screens
+     instead of introducing a horizontal scrollbar. Row height grows
+     naturally; the grid row is `auto` so nothing is clipped. */
+  header { grid-column: 1/-1; display: flex; align-items: center; flex-wrap: wrap;
+    padding: 8px 16px; background: #fff; border-bottom: 1px solid #d4d1ca;
+    gap: 6px 8px; min-height: 48px; box-sizing: border-box; }
   header h1 { margin: 0; font-size: 16px; font-weight: 600; }
   header .spacer { flex: 1; }
   header select, header button, header input[type="text"] {
@@ -70,13 +74,13 @@
   #svg-host svg { display: block; }
   #svg-host { cursor: crosshair; }
   .coord-hud { position: fixed; bottom: 8px; left: 12px; background: rgba(0,0,0,.7); color: #fff; padding: 4px 8px; border-radius: 3px; font: 12px ui-monospace, monospace; z-index: 10; pointer-events: none; }
-  /* v0.7.6.1 — uniform toolbar: every control renders like a regular
+  /* v0.7.6.3 — uniform toolbar: every control renders like a regular
      header button/select (border, radius, padding, font). No chips, no
-     underlined link-buttons, no rounded pills. Frame name shown as a
-     plain, fixed-width text label so the row never reflows. */
+     underlined link-buttons, no rounded pills. Frame name is auto-width
+     with a max cap so it never eats the row on wide screens. */
   #frame-label {
     display: inline-block; padding: 6px 8px; font-size: 13px;
-    color: #28251D; width: 140px; overflow: hidden; text-overflow: ellipsis;
+    color: #28251D; max-width: 180px; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; user-select: none;
   }
   #frame-label.empty { color: #7A7974; font-style: italic; }

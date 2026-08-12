@@ -105,7 +105,7 @@ def health() -> dict:
         "status": "ok",
         "spec_version": SPEC_VERSION,
         "drawlang_version": pkg_version,
-        "semantic_layer": "0.7.6.2",  # v0.7.6.2 Frame Editor tab isolation + disabled-button contrast (grammar frozen at v0.6)
+        "semantic_layer": "0.7.6.3",  # v0.7.6.3 Toolbar wraps instead of scrolling (grammar frozen at v0.6)
         "git_sha": _GIT_SHA_CACHE,
     }
 
