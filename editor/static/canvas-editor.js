@@ -1117,6 +1117,28 @@ async function dropLibraryHere(slug, x, y) {
 // older HTML snapshots; guard with a null check).
 const _newFrameBtn = document.getElementById("new-frame-create");
 if (_newFrameBtn) _newFrameBtn.addEventListener("click", createFrameFromSidebar);
+const _newFrameImportBtn = document.getElementById("new-frame-import-btn");
+const _newFrameImportFile = document.getElementById("new-frame-import-file");
+if (_newFrameImportBtn && _newFrameImportFile) {
+  _newFrameImportBtn.addEventListener("click", () => _newFrameImportFile.click());
+  _newFrameImportFile.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    // Fill the New-frame form with sensible defaults derived from the filename.
+    const base = file.name.replace(/\.drawlang$|\.txt$/i, "")
+      .toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, "");
+    if (!$("new-frame-id").value) $("new-frame-id").value = base;
+    if (!$("new-frame-name").value) $("new-frame-name").value = base;
+    $("new-frame-dl").value = text;
+    e.target.value = "";
+    const status = $("frames-status");
+    if (status) {
+      status.textContent = `Loaded ${file.name}. Review id/name and click Create frame.`;
+      status.className = "status";
+    }
+  });
+}
 
 $("save-symbol-btn").addEventListener("click", async () => {
   const name = $("save-symbol-name").value.trim();
@@ -1316,99 +1338,6 @@ $("import-file").addEventListener("change", async (e) => {
 });
 
 // --------------------------------------------------------------------------
-// v0.7.2 dropdown menus (Frames ▾, Export ▾)
-// --------------------------------------------------------------------------
-function wireMenu(btnId, itemsId) {
-  const btn = $(btnId);
-  const items = $(itemsId);
-  if (!btn || !items) return;
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const willOpen = items.hasAttribute("hidden");
-    // Close every open menu first.
-    document.querySelectorAll(".menu-items").forEach((m) => m.setAttribute("hidden", ""));
-    if (willOpen) items.removeAttribute("hidden");
-  });
-  items.addEventListener("click", () => {
-    // Any click inside an item closes the menu.
-    items.setAttribute("hidden", "");
-  });
-}
-wireMenu("frames-menu-btn", "frames-menu-items");
-wireMenu("export-menu-btn", "export-menu-items");
-document.addEventListener("click", () => {
-  document.querySelectorAll(".menu-items").forEach((m) => m.setAttribute("hidden", ""));
-});
-
-// --------------------------------------------------------------------------
-// v0.7.2 Frames menu: New / Edit current / Import from DrawLang
-// All actions go through /api/frames — no local state.
-// --------------------------------------------------------------------------
-async function frameCreateFromText(program, defaults) {
-  const id = (defaults && defaults.id) || prompt("Frame id (unique, e.g. a3-title-block):");
-  if (!id) return null;
-  const name = prompt("Frame display name:", (defaults && defaults.name) || id);
-  if (name == null) return null;
-  try {
-    const res = await fetch("/api/frames", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id, name,
-        drawlang: program || "",
-        fields: [],
-        source: (defaults && defaults.source) || "editor",
-      }),
-    });
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-    const data = await res.json();
-    await loadFrameList();
-    $("frame-select").value = data.frame.id;
-    // Save the canvas -> frame binding so the new frame is used.
-    if (state.currentCanvas) {
-      await api(`/api/canvases/${state.currentCanvas}`, {
-        method: "PATCH",
-        body: JSON.stringify({ frame_id: data.frame.id }),
-      });
-      await loadCanvas(state.currentCanvas);
-    }
-    // Offer to open the frames editor so the user can fill fields.
-    if (confirm(`Frame "${data.frame.id}" created. Open the frames editor to edit its fields and DrawLang?`)) {
-      window.open(`/frames-editor?frame=${encodeURIComponent(data.frame.id)}`, "_blank");
-    }
-    return data.frame;
-  } catch (err) {
-    alert("Frame create failed: " + err.message);
-    return null;
-  }
-}
-
-document.querySelectorAll("[data-frame-act]").forEach((btn) => {
-  btn.addEventListener("click", async () => {
-    const act = btn.dataset.frameAct;
-    if (act === "new") {
-      await frameCreateFromText("", null);
-    } else if (act === "edit") {
-      const fid = $("frame-select").value;
-      if (!fid) { alert("No frame is bound to this canvas. Pick one from the Frame dropdown first, or use New frame…"); return; }
-      window.open(`/frames-editor?frame=${encodeURIComponent(fid)}`, "_blank");
-    } else if (act === "import") {
-      $("frame-import-file").click();
-    }
-  });
-});
-
-$("frame-import-file").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const text = await file.text();
-  // Derive a default id from the filename (drop extension, kebab-case).
-  const base = file.name.replace(/\.drawlang$|\.txt$/i, "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, "");
-  await frameCreateFromText(text, { id: base, name: base, source: "import" });
-  e.target.value = "";
-});
-
-// --------------------------------------------------------------------------
 // Startup
 // --------------------------------------------------------------------------
 (async () => {
@@ -1481,28 +1410,46 @@ function setSidebarTab(tab) {
   if (tab === "frames") refreshFramesSidebar();
 }
 
-// v0.7 Frames tab — list, create, delete, and edit fields. Uses the
-// DB-backed /api/frames.
+// v0.7 Frames tab — list, create, delete, bind-to-canvas, and edit fields
+// and DrawLang source inline. Everything goes through /api/frames.
 async function refreshFramesSidebar() {
   const host = $("frames-list");
   if (!host) return;
+  const boundId = state.currentCanvas ? ($("frame-select").value || "") : "";
   try {
     const d = await api("/api/frames");
     if (!d.frames || d.frames.length === 0) {
       host.innerHTML = '<div class="status">No frames yet.</div>';
       return;
     }
-    host.innerHTML = d.frames.map((f) => `
+    host.innerHTML = d.frames.map((f) => {
+      const isBound = f.id === boundId;
+      return `
       <div class="frame-item" data-frame-id="${escapeAttr(f.id)}">
         <div class="prim-item frame-item-row">
-          <span class="prim-name">${escapeAttr(f.name || f.id)}</span>
+          <span class="prim-name">${escapeAttr(f.name || f.id)}${isBound ? " • in use" : ""}</span>
           <span class="prim-meta">${f.field_count || 0} fields</span>
-          <button class="frame-fields-btn" data-fields="${escapeAttr(f.id)}" title="Edit fields" style="font-size:10px;padding:1px 4px">✎</button>
+          <button class="frame-use" data-use="${escapeAttr(f.id)}" title="Use this frame on the current canvas" style="font-size:10px;padding:1px 6px" ${isBound || !state.currentCanvas ? "disabled" : ""}>Use</button>
+          <button class="frame-fields-btn" data-fields="${escapeAttr(f.id)}" title="Edit frame inline" style="font-size:10px;padding:1px 4px">✎</button>
           <button class="frame-del" data-del="${escapeAttr(f.id)}" title="Delete frame" style="font-size:10px;padding:1px 4px">✕</button>
         </div>
         <div class="frame-fields-panel" data-fields-panel="${escapeAttr(f.id)}" style="display:none"></div>
-      </div>
-    `).join("");
+      </div>`;
+    }).join("");
+    host.querySelectorAll("[data-use]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.use;
+        if (!state.currentCanvas) return;
+        await api(`/api/canvases/${state.currentCanvas}`, {
+          method: "PATCH",
+          body: JSON.stringify({ frame_id: id }),
+        });
+        $("frame-select").value = id;
+        await loadCanvas(state.currentCanvas);
+        await refreshFramesSidebar();
+      });
+    });
     host.querySelectorAll("[data-del]").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
@@ -1547,6 +1494,12 @@ async function openFrameFieldsEditor(frameId) {
   const render = () => {
     panel.innerHTML = `
       <div class="frame-fields-editor">
+        <div class="prim-cat" style="margin-top:0">Frame metadata</div>
+        <label style="display:block;font-size:11px;color:#7a7974">Display name</label>
+        <input class="ff-frame-name" type="text" value="${escapeAttr(data.name || "")}" style="width:100%;margin-bottom:4px" />
+        <label style="display:block;font-size:11px;color:#7a7974">DrawLang source</label>
+        <textarea class="ff-frame-dl" rows="6" style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;margin-bottom:6px">${escapeAttr(data.drawlang || "")}</textarea>
+        <div class="prim-cat">Editable fields</div>
         <div class="frame-fields-head">
           <span>name</span><span>default</span><span>x</span><span>y</span><span></span>
         </div>
@@ -1596,17 +1549,24 @@ async function openFrameFieldsEditor(frameId) {
           editable: true,
         });
       }
+      const newName = panel.querySelector(".ff-frame-name").value.trim() || data.name || frameId;
+      const newDl = panel.querySelector(".ff-frame-dl").value;
       const status = panel.querySelector(".ff-status");
       status.textContent = "Saving…";
       status.className = "ff-status";
       try {
         await api(`/api/frames/${encodeURIComponent(frameId)}`, {
           method: "PATCH",
-          body: JSON.stringify({ fields: out }),
+          body: JSON.stringify({ name: newName, drawlang: newDl, fields: out }),
         });
         status.textContent = "Saved.";
         status.className = "ff-status ok";
         await refreshFramesSidebar();
+        await loadFrameList();
+        // Re-render if this frame is currently bound to the canvas.
+        if (state.currentCanvas && $("frame-select").value === frameId) {
+          await loadCanvas(state.currentCanvas);
+        }
       } catch (e) {
         status.textContent = e.message;
         status.className = "ff-status err";

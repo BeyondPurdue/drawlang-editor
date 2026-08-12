@@ -85,28 +85,14 @@
     <select id="frame-select" style="min-width:130px">
       <option value="">— none —</option>
     </select>
-    <div class="menu" id="frames-menu">
-      <button id="frames-menu-btn" title="Manage frames">Frames ▾</button>
-      <div class="menu-items" id="frames-menu-items" hidden>
-        <button data-frame-act="new">New frame…</button>
-        <button data-frame-act="edit">Edit current frame</button>
-        <button data-frame-act="import">Import from DrawLang…</button>
-      </div>
-    </div>
-    <input type="file" id="frame-import-file" accept=".drawlang,text/plain" style="display:none" />
     <button id="import-btn" title="Append a .drawlang file to this canvas">Import…</button>
     <input type="file" id="import-file" accept=".drawlang,text/plain" style="display:none" />
     <div class="spacer"></div>
     <button id="undo-btn" title="Undo last edit" disabled>Undo</button>
     <button id="redo-btn" title="Redo last undone edit" disabled>Redo</button>
-    <div class="menu" id="export-menu">
-      <button id="export-menu-btn" title="Export…">Export ▾</button>
-      <div class="menu-items" id="export-menu-items" hidden>
-        <button id="export-dl">DrawLang</button>
-        <button id="export-svg">SVG</button>
-        <button id="export-pdf">PDF</button>
-      </div>
-    </div>
+    <button id="export-dl" title="Download this canvas as .drawlang text">Export DrawLang</button>
+    <button id="export-svg">Export SVG</button>
+    <button id="export-pdf">Export PDF</button>
     <button id="render-btn" class="primary">Render</button>
   </header>
 
@@ -149,7 +135,11 @@
       <input type="text" id="new-frame-id" placeholder="id (e.g. a4-portrait)" style="width:100%;margin-bottom:4px" />
       <input type="text" id="new-frame-name" placeholder="Display name" style="width:100%;margin-bottom:4px" />
       <textarea id="new-frame-dl" placeholder="# drawlang source for the frame&#10;mr,0,0;&#10;rt,297,210;" rows="6" style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;margin-bottom:4px"></textarea>
-      <button id="new-frame-create" style="width:100%">Create frame</button>
+      <div style="display:flex;gap:4px">
+        <button id="new-frame-create" style="flex:1">Create frame</button>
+        <button id="new-frame-import-btn" title="Import DrawLang file into the source box" style="flex:0 0 auto">Import…</button>
+      </div>
+      <input type="file" id="new-frame-import-file" accept=".drawlang,text/plain" style="display:none" />
       <div class="status" id="frames-status"></div>
     </div>
     <h2>Save selection as symbol</h2>

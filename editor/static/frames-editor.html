@@ -12,14 +12,15 @@ body {
   display: flex; flex-direction: column; height: 100vh;
 }
 header {
-  padding: 12px 20px; background: #fff; border-bottom: 1px solid #D4D1CA;
-  display: flex; align-items: center; gap: 16px;
+  padding: 8px 20px; background: #fff; border-bottom: 1px solid #D4D1CA;
+  display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;
 }
-header h1 { margin: 0; font-size: 18px; font-weight: 600; }
-header .status { font-size: 13px; color: #7A7974; }
+header h1 { margin: 0; font-size: 18px; font-weight: 600; white-space: nowrap; }
+header .status { font-size: 13px; color: #7A7974; white-space: nowrap; }
 header select, header button {
-  padding: 6px 12px; border: 1px solid #D4D1CA; border-radius: 4px;
-  background: #fff; font: inherit; cursor: pointer;
+  padding: 4px 10px; border: 1px solid #D4D1CA; border-radius: 4px;
+  background: #fff; font: inherit; font-size: 13px; line-height: 1.3;
+  cursor: pointer; white-space: nowrap;
 }
 header button.primary { background: #01696F; color: #fff; border-color: #01696F; }
 .main { flex: 1; display: flex; overflow: hidden; }
