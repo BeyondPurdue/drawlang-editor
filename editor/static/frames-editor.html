@@ -23,7 +23,9 @@ header button, header select {
   cursor: pointer; white-space: nowrap;
 }
 header button.primary { background: #01696F; color: #fff; border-color: #01696F; }
-header button.primary:disabled { background: #7A7974; border-color: #7A7974; cursor: not-allowed; }
+header button.primary:hover:not(:disabled) { background: #0C4E54; border-color: #0C4E54; }
+header button:disabled { background: #F2F1EC; color: #BAB9B4; border-color: #E5E3DE; cursor: not-allowed; }
+header button.primary:disabled { background: #F2F1EC; color: #BAB9B4; border-color: #E5E3DE; }
 header button.danger { color: #A12C7B; }
 
 .main { flex: 1; display: flex; overflow: hidden; }
@@ -139,12 +141,13 @@ header button.danger { color: #A12C7B; }
   background: #FBFBF9; border: 1px dashed #D4D1CA; border-radius: 6px;
 }
 
-/* Preview tab */
-.preview-tab { background: #ECEAE3; display: flex; justify-content: center;
-  align-items: flex-start; padding: 20px; }
+/* Preview tab — only render as flex when active; base .tab-content rule
+   keeps it hidden until its tab is selected. */
+.preview-tab { background: #ECEAE3; padding: 20px; }
+.preview-tab.active { display: flex; justify-content: center; align-items: flex-start; }
 .preview-tab svg { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
   max-width: 100%; height: auto; }
-.preview-empty { color: #7A7974; padding: 40px; }
+.preview-empty { color: #7A7974; padding: 40px; text-align: center; width: 100%; }
 
 .error { color: #A12C7B; padding: 8px 12px; background: rgba(161,44,123,0.08);
   border-radius: 4px; margin: 8px 0; font-size: 13px; }
