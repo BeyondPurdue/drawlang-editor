@@ -8,7 +8,8 @@
 <style>
   body { margin: 0; font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f7f6f2; color: #28251d; }
   .app { display: grid; grid-template-columns: 260px 1fr 320px; grid-template-rows: 48px 1fr; height: 100vh; }
-  header { grid-column: 1/-1; display: flex; align-items: center; padding: 0 16px; background: #fff; border-bottom: 1px solid #d4d1ca; gap: 12px; }
+  header { grid-column: 1/-1; display: flex; align-items: center; padding: 0 16px; background: #fff; border-bottom: 1px solid #d4d1ca; gap: 8px; overflow-x: auto; }
+  header > * { flex-shrink: 0; }
   header h1 { margin: 0; font-size: 16px; font-weight: 600; }
   header .spacer { flex: 1; }
   header select, header button, header input[type="text"] {
@@ -69,18 +70,16 @@
   #svg-host svg { display: block; }
   #svg-host { cursor: crosshair; }
   .coord-hud { position: fixed; bottom: 8px; left: 12px; background: rgba(0,0,0,.7); color: #fff; padding: 4px 8px; border-radius: 3px; font: 12px ui-monospace, monospace; z-index: 10; pointer-events: none; }
-  .frame-chip {
-    display: inline-block; padding: 4px 10px; font-size: 12px;
-    background: #F2F1EC; border: 1px solid #D4D1CA; border-radius: 12px;
-    color: #28251D; max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+  /* v0.7.6.1 — uniform toolbar: every control renders like a regular
+     header button/select (border, radius, padding, font). No chips, no
+     underlined link-buttons, no rounded pills. Frame name shown as a
+     plain, fixed-width text label so the row never reflows. */
+  #frame-label {
+    display: inline-block; padding: 6px 8px; font-size: 13px;
+    color: #28251D; width: 140px; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; user-select: none;
   }
-  .frame-chip.empty { background: #fff; color: #7A7974; font-style: italic; }
-  .link-btn {
-    background: none; border: none; color: #01696F; cursor: pointer;
-    font: inherit; font-size: 12px; padding: 4px 6px; text-decoration: underline;
-  }
-  .link-btn:hover { color: #0C4E54; }
+  #frame-label.empty { color: #7A7974; font-style: italic; }
   header button:disabled { opacity: 0.5; cursor: not-allowed; }
   /* Field values modal + panel */
   .fv-list { display: flex; flex-direction: column; gap: 8px; }
@@ -105,9 +104,9 @@
     <button id="dup-canvas-btn" title="Duplicate the current canvas to a new slug">Duplicate</button>
     <input type="text" id="canvas-rename" placeholder="Rename…" style="width:160px" />
     <label style="margin-left:8px;font-size:13px;color:#7a7974">Frame:</label>
-    <span id="frame-chip" class="frame-chip" title="This canvas's frame">— none —</span>
-    <button id="change-frame-btn" class="link-btn" title="Change or clear this canvas's frame">change…</button>
-    <button id="field-values-btn" title="Edit field values used to fill frame tokens" disabled>Field values</button>
+    <span id="frame-label" class="empty" title="This canvas's frame">— none —</span>
+    <button id="change-frame-btn" title="Change or clear this canvas's frame">Change frame…</button>
+    <button id="field-values-btn" title="Edit field values used to fill frame tokens" disabled>Field values…</button>
     <button id="import-btn" title="Append a .drawlang file to this canvas">Import…</button>
     <input type="file" id="import-file" accept=".drawlang,text/plain" style="display:none" />
     <div class="spacer"></div>

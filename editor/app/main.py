@@ -105,7 +105,7 @@ def health() -> dict:
         "status": "ok",
         "spec_version": SPEC_VERSION,
         "drawlang_version": pkg_version,
-        "semantic_layer": "0.7.6",  # v0.7.6 Frames-as-editor + Canvas-from-frame flow (grammar frozen at v0.6)
+        "semantic_layer": "0.7.6.1",  # v0.7.6.1 Toolbar visual cleanup (grammar frozen at v0.6)
         "git_sha": _GIT_SHA_CACHE,
     }
 

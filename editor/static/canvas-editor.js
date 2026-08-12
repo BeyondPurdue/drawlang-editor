@@ -101,19 +101,22 @@ function populateFramePickers() {
 }
 
 function updateFrameChip() {
-  const chip = $("frame-chip");
+  // Historical name kept; targets the new plain #frame-label span.
+  const label = $("frame-label");
   const btn = $("field-values-btn");
-  if (!chip) return;
+  if (!label) return;
   const fid = state.currentFrameId || "";
   if (!fid) {
-    chip.textContent = "— none —";
-    chip.classList.add("empty");
+    label.textContent = "— none —";
+    label.classList.add("empty");
+    label.title = "This canvas has no frame bound.";
     if (btn) btn.disabled = true;
   } else {
     const f = (state.allFrames || []).find(x => (x.id || x.slug) === fid);
-    chip.textContent = f ? (f.name || fid) : fid;
-    chip.title = `Frame: ${fid}`;
-    chip.classList.remove("empty");
+    const name = f ? (f.name || fid) : fid;
+    label.textContent = name;
+    label.classList.remove("empty");
+    label.title = `Frame: ${fid}`;
     if (btn) btn.disabled = false;
   }
 }
