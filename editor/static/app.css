@@ -503,3 +503,13 @@ html, body {
 .ff-status { font-size: 11px; margin-left: 4px; }
 .ff-status.ok { color: #437a22; }
 .ff-status.err { color: #a12c7b; }
+
+/* v0.7 rubber-band selection — drag on empty canvas to marquee-select. */
+.rubber-band {
+  position: fixed;
+  pointer-events: none;
+  border: 1px dashed #01696f;
+  background: rgba(1, 105, 111, 0.08);
+  z-index: 900;
+  border-radius: 2px;
+}

@@ -104,6 +104,7 @@ async function renderCanvas() {
     // constrain size
     svg.style.maxWidth = "100%";
     svg.style.height = "auto";
+    addHitAreas(svg);
     hookSvgEvents(svg);
   }
   $("stmt-status").textContent = `Rendered ${state.statements.length} statements`;
@@ -121,42 +122,184 @@ function hookSvgEvents(svg) {
     const p = toPaper(svgPoint(svg, e));
     $("coord-hud").textContent = `x: ${Math.round(p.x)}  y: ${Math.round(p.y)}`;
   });
-  // Attach to the host container so clicks always land, even on inner <g>
+
+  // Attach to the host container so events always land, even on inner <g>
   // elements where getScreenCTM() can be null.
   const host = $("svg-host");
-  host.onclick = (e) => {
-    if (state.pendingDrop) {
-      const p = toPaper(svgPoint(svg, e));
-      const drop = state.pendingDrop;
-      state.pendingDrop = null;
-      svg.style.cursor = "crosshair";
-      if (drop.kind === "opcode") {
-        dropOpcodeHere(drop.opcode, drop.args, p.x, p.y);
-      } else if (drop.kind === "primitive") {
-        dropPrimitiveHere(drop.id, drop.values, p.x, p.y);
-      } else {
-        const slug = typeof drop === "string" ? drop : drop.slug;
-        dropLibraryHere(slug, p.x, p.y);
-      }
+
+  // v0.7 selection: click = single-pick (with generous hit area, see below),
+  // drag on empty area = rubber-band. Shift = add to selection.
+  //
+  // Threshold is in *client* pixels so it feels the same at any zoom.
+  const DRAG_THRESHOLD_PX = 4;
+  let downOnElement = null;   // the [data-statement-id] under mousedown, or null
+  let downClient = null;      // {x,y} at mousedown in client px
+  let downShift = false;
+  let dragging = false;       // true once past threshold
+  let rubber = null;          // DOM <div> rubber-band overlay
+
+  host.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;         // left only
+    if (state.pendingDrop) return;      // drop path handled in mouseup->click
+    downClient = { x: e.clientX, y: e.clientY };
+    downShift = e.shiftKey;
+    downOnElement = e.target.closest("[data-statement-id]");
+    dragging = false;
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!downClient || state.pendingDrop) return;
+    const dx = e.clientX - downClient.x;
+    const dy = e.clientY - downClient.y;
+    if (!dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+    // We only rubber-band when the drag started on empty canvas OR the user
+    // is holding Shift (marquee-add). Dragging on top of a shape without
+    // Shift stays a click — keeps things predictable.
+    if (downOnElement && !downShift) { dragging = true; return; }
+    dragging = true;
+    if (!rubber) {
+      rubber = document.createElement("div");
+      rubber.className = "rubber-band";
+      document.body.appendChild(rubber);
+    }
+    const x1 = Math.min(downClient.x, e.clientX);
+    const y1 = Math.min(downClient.y, e.clientY);
+    const x2 = Math.max(downClient.x, e.clientX);
+    const y2 = Math.max(downClient.y, e.clientY);
+    rubber.style.left = `${x1}px`;
+    rubber.style.top = `${y1}px`;
+    rubber.style.width = `${x2 - x1}px`;
+    rubber.style.height = `${y2 - y1}px`;
+  });
+
+  document.addEventListener("mouseup", (e) => {
+    if (!downClient) return;
+    const wasDrag = dragging;
+    const shift = downShift;
+    const startedOn = downOnElement;
+    const rect = rubber ? rubber.getBoundingClientRect() : null;
+    // Clear state before we mutate selection so re-entrant events are safe.
+    downClient = null;
+    downOnElement = null;
+    downShift = false;
+    dragging = false;
+    if (rubber) { rubber.remove(); rubber = null; }
+
+    if (state.pendingDrop) return;   // click path handled in host.onclick below
+
+    if (wasDrag && rect && (rect.width > DRAG_THRESHOLD_PX || rect.height > DRAG_THRESHOLD_PX)) {
+      const hits = elementsIntersectingClientRect(svg, rect);
+      applyMarqueeSelection(hits, shift);
       return;
     }
-    // v0.7: no pending drop → treat as a selection click. Walk up the
-    // DOM from the actual target to find the nearest ancestor tagged
-    // with data-statement-id. If none, clear selection.
-    const wrapper = e.target.closest("[data-statement-id]");
+
+    // Not a drag — treat as click. Walk up the DOM from the actual target
+    // to find the nearest ancestor tagged with data-statement-id. If none,
+    // clear selection.
+    const wrapper = startedOn || e.target.closest("[data-statement-id]");
     if (wrapper) {
       const id = parseInt(wrapper.getAttribute("data-statement-id"), 10);
-      if (Number.isFinite(id)) selectStatementById(id, e.shiftKey);
+      if (Number.isFinite(id)) selectStatementById(id, shift, { scroll: true });
     } else {
       selectStatementById(null, false);
     }
+  });
+
+  // The drop path stays as an onclick so it fires *after* mouseup without
+  // interfering with the drag/click logic above.
+  host.onclick = (e) => {
+    if (!state.pendingDrop) return;
+    const p = toPaper(svgPoint(svg, e));
+    const drop = state.pendingDrop;
+    state.pendingDrop = null;
+    svg.style.cursor = "crosshair";
+    if (drop.kind === "opcode") {
+      dropOpcodeHere(drop.opcode, drop.args, p.x, p.y);
+    } else if (drop.kind === "primitive") {
+      dropPrimitiveHere(drop.id, drop.values, p.x, p.y);
+    } else {
+      const slug = typeof drop === "string" ? drop : drop.slug;
+      dropLibraryHere(slug, p.x, p.y);
+    }
   };
+}
+
+// Return every [data-statement-id] wrapper whose bounding rect intersects
+// the given client-space rect. Uses getBoundingClientRect on the wrapper
+// itself so the check honours transforms exactly like the user sees them.
+function elementsIntersectingClientRect(svg, rect) {
+  const hits = new Set();
+  const wrappers = svg.querySelectorAll("[data-statement-id]");
+  wrappers.forEach((el) => {
+    const b = el.getBoundingClientRect();
+    // Skip zero-size (unrendered / detached) elements.
+    if (b.width === 0 && b.height === 0) return;
+    const overlap = !(b.right < rect.left || b.left > rect.right ||
+                      b.bottom < rect.top || b.top > rect.bottom);
+    if (overlap) {
+      const id = parseInt(el.getAttribute("data-statement-id"), 10);
+      if (Number.isFinite(id)) hits.add(id);
+    }
+  });
+  return hits;
+}
+
+function applyMarqueeSelection(idSet, additive) {
+  if (!additive) state.selectedIds.clear();
+  idSet.forEach((id) => state.selectedIds.add(id));
+  applySelectionHighlights();
+  showEditPanel();
+  // Scroll the first selected row into view.
+  const first = [...idSet][0];
+  if (first !== undefined) scrollStmtRowIntoView(first);
+}
+
+// v0.7: give every visible geometry inside a [data-statement-id] wrapper a
+// generous invisible hit target so thin lines and small marks are easy to
+// click on a big canvas. We clone each visible <line>/<path>/<polyline>/
+// <polygon>/<circle>/<rect> once, drop the clone BEHIND the original with
+// a fat transparent stroke, and let pointer events land on it. Cheap, no
+// renderer changes, works with any zoom level (stroke-width is in paper
+// units so the viewer's transform scales it).
+function addHitAreas(svg) {
+  const HIT_STROKE = 12;   // paper units — comfortable finger/mouse target
+  const wrappers = svg.querySelectorAll("[data-statement-id]");
+  wrappers.forEach((wrap) => {
+    // Skip if we've already processed this wrapper.
+    if (wrap.querySelector(":scope > .hit-area")) return;
+    const shapes = wrap.querySelectorAll("line, path, polyline, polygon, circle, rect, ellipse");
+    shapes.forEach((shape) => {
+      // Don't fatten filled regions — they already have a big pick area.
+      const fill = shape.getAttribute("fill");
+      const isFilled = fill && fill !== "none" && fill !== "transparent";
+      if (isFilled) return;
+      const hit = shape.cloneNode(false);
+      hit.setAttribute("class", "hit-area");
+      hit.setAttribute("stroke", "transparent");
+      hit.setAttribute("stroke-width", String(HIT_STROKE));
+      hit.setAttribute("fill", "none");
+      hit.setAttribute("pointer-events", "stroke");
+      // Remove any dash/style that could shrink pick area.
+      hit.removeAttribute("stroke-dasharray");
+      hit.removeAttribute("stroke-linecap");
+      hit.removeAttribute("stroke-linejoin");
+      // Insert BEFORE the visible shape so the visible stroke stays on top.
+      shape.parentNode.insertBefore(hit, shape);
+    });
+  });
+}
+
+function scrollStmtRowIntoView(id) {
+  const row = document.querySelector(`#stmt-list .stmt-row[data-id="${id}"]`);
+  if (row && typeof row.scrollIntoView === "function") {
+    row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
 }
 
 // v0.7 selection helpers — single source of truth = state.selectedIds.
 // The statements list, canvas SVG, and Edit Selected panel all read from
 // this set. Any mutation must call `applySelectionHighlights()`.
-function selectStatementById(id, additive) {
+function selectStatementById(id, additive, opts) {
   if (id === null || id === undefined) {
     state.selectedIds.clear();
   } else if (additive) {
@@ -168,6 +311,11 @@ function selectStatementById(id, additive) {
   }
   applySelectionHighlights();
   showEditPanel();
+  // v0.7: canvas → statements auto-scroll. Off by default (from stmt-list
+  // clicks the row is already visible) and only requested by canvas picks.
+  if (opts && opts.scroll && id !== null && id !== undefined) {
+    scrollStmtRowIntoView(id);
+  }
 }
 
 function applySelectionHighlights() {
