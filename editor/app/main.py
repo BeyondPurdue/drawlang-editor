@@ -105,7 +105,7 @@ def health() -> dict:
         "status": "ok",
         "spec_version": SPEC_VERSION,
         "drawlang_version": pkg_version,
-        "semantic_layer": "0.7.4",  # v0.7.4 inline Frames tab (drop dropdowns, restore 3 export buttons, SandBox rename) (language grammar frozen at v0.6)
+        "semantic_layer": "0.7.5",  # v0.7.5 tighter marquee (strict containment) + arrow-key nudge (language grammar frozen at v0.6)
         "git_sha": _GIT_SHA_CACHE,
     }
 

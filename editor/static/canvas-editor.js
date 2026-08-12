@@ -227,9 +227,11 @@ function hookSvgEvents(svg) {
   };
 }
 
-// Return every [data-statement-id] wrapper whose bounding rect intersects
-// the given client-space rect. Uses getBoundingClientRect on the wrapper
-// itself so the check honours transforms exactly like the user sees them.
+// Return every [data-statement-id] wrapper fully contained within the
+// given client-space rect. Strict containment (not intersect) — the user
+// asked for tighter selection so we require the whole bbox to sit inside
+// the marquee. Uses getBoundingClientRect on the wrapper itself so the
+// check honours transforms exactly like the user sees them.
 function elementsIntersectingClientRect(svg, rect) {
   const hits = new Set();
   const wrappers = svg.querySelectorAll("[data-statement-id]");
@@ -237,9 +239,11 @@ function elementsIntersectingClientRect(svg, rect) {
     const b = el.getBoundingClientRect();
     // Skip zero-size (unrendered / detached) elements.
     if (b.width === 0 && b.height === 0) return;
-    const overlap = !(b.right < rect.left || b.left > rect.right ||
-                      b.bottom < rect.top || b.top > rect.bottom);
-    if (overlap) {
+    const contained = b.left   >= rect.left  &&
+                      b.right  <= rect.right &&
+                      b.top    >= rect.top   &&
+                      b.bottom <= rect.bottom;
+    if (contained) {
       const id = parseInt(el.getAttribute("data-statement-id"), 10);
       if (Number.isFinite(id)) hits.add(id);
     }
@@ -723,6 +727,65 @@ async function mirrorSelection(axis) {
   const stmts = state.statements.filter((s) => state.selectedIds.has(s.id));
   const pivot = _selectionCentroid(stmts);
   await _transformSelection((s) => _mirrorArgs(s, axis, pivot));
+}
+
+// v0.7.5 arrow-key nudge.
+//
+// Rule: for each selected statement, find its anchor — the nearest
+// preceding `ma` (absolute) or `mr` (relative) with seq ≤ this row's seq.
+// Shift that anchor by (dx, dy). Multiple selected statements sharing the
+// same anchor only shift the anchor once.
+//
+// Anchors that are themselves selected are shifted directly. This gives
+// the expected behaviour when the user picks a whole shape (anchor + draw
+// ops) or just clicks the draw op alone.
+function _findAnchorFor(stmt, sortedStmts) {
+  // Walk backward from this statement's index looking for ma/mr.
+  const idx = sortedStmts.findIndex((s) => s.id === stmt.id);
+  if (idx < 0) return null;
+  for (let i = idx; i >= 0; i--) {
+    const s = sortedStmts[i];
+    if (s.opcode === "ma" || s.opcode === "mr") return s;
+  }
+  return null;
+}
+
+async function nudgeSelection(dx, dy) {
+  const ids = [...state.selectedIds];
+  if (!ids.length) return;
+  const sorted = [...state.statements].sort((a, b) => a.seq - b.seq);
+  const anchorIds = new Set();
+  for (const id of ids) {
+    const stmt = sorted.find((s) => s.id === id);
+    if (!stmt) continue;
+    const anchor = _findAnchorFor(stmt, sorted);
+    if (anchor) anchorIds.add(anchor.id);
+  }
+  if (!anchorIds.size) {
+    const status = $("lib-status");
+    if (status) {
+      status.textContent = "Cannot nudge — selection has no anchor (ma/mr) to shift.";
+      status.className = "status err";
+    }
+    return;
+  }
+  const changed = [];
+  for (const aid of anchorIds) {
+    const s = sorted.find((x) => x.id === aid);
+    if (!s) continue;
+    const a = _parseArgs(s.args);
+    if (typeof a[0] !== "number" || typeof a[1] !== "number") continue;
+    // ma is absolute paper coords, mr is a delta — both add (dx,dy) to move
+    // the resulting pen position by the same amount.
+    changed.push({ id: aid, args: _joinArgs([a[0] + dx, a[1] + dy, ...a.slice(2)]) });
+  }
+  for (const c of changed) {
+    await api(`/api/canvases/${state.currentCanvas}/statements/${c.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ args: c.args }),
+    });
+  }
+  await reloadStatements();
 }
 
 async function duplicateSelection() {
@@ -1260,6 +1323,25 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     doRedo();
   }
+});
+
+// v0.7.5: arrow keys nudge the current selection by 1 paper unit (mm).
+// Shift+Arrow = 10 units. Ignore when a form control has focus.
+document.addEventListener("keydown", (e) => {
+  const tag = (e.target && e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select" ||
+      (e.target && e.target.isContentEditable)) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (!state.selectedIds || !state.selectedIds.size) return;
+  const step = e.shiftKey ? 10 : 1;
+  let dx = 0, dy = 0;
+  if (e.key === "ArrowLeft")       dx = -step;
+  else if (e.key === "ArrowRight") dx =  step;
+  else if (e.key === "ArrowUp")    dy = -step;
+  else if (e.key === "ArrowDown")  dy =  step;
+  else return;
+  e.preventDefault();
+  nudgeSelection(dx, dy);
 });
 
 $("export-pdf").addEventListener("click", async () => {
