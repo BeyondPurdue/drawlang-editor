@@ -60,8 +60,8 @@ appointed representative at an online or offline event.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement via a GitHub
-issue in this repository or a direct message to the Beyond Purdue moderators on
-[r/BeyondPurdue](https://www.reddit.com/r/BeyondPurdue/). All complaints will
+issue in this repository or a direct message to the DrawLang moderators on
+[r/drawlang](https://www.reddit.com/r/drawlang/). All complaints will
 be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the

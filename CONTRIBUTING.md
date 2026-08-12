@@ -4,7 +4,7 @@ Thanks for considering a contribution. This project is small, opinionated, and m
 
 ## Ground rules
 
-1. **The language spec is LOCKED at v0.6.** No opcode additions, argument changes, or modifier changes happen without a formal v0.7 event with community review on [r/BeyondPurdue](https://www.reddit.com/r/BeyondPurdue/). Interpreter, backend, editor, and frame changes are always welcome inside the frozen grammar.
+1. **The language spec is LOCKED at v0.6.** No opcode additions, argument changes, or modifier changes happen without a formal v0.7 event with community review on [r/drawlang](https://www.reddit.com/r/drawlang/). Interpreter, backend, editor, and frame changes are always welcome inside the frozen grammar.
 2. **API is the only path.** Every mark on every canvas is produced by posting drawlang statements to the editor's `POST /api/canvases/{id}/statements` endpoint. The graphical editor, the CLI tools, and the voice/AI input all use exactly this endpoint. No side channels, no client-only geometry, no hidden primitives. This rule applies to contributions too — features that bypass the API will be asked to refactor.
 3. **KISS.** Anything more complex than the simplest working answer needs justification. If a feature can't be expressed in v0.6, open a discussion issue first — don't work around it in the editor.
 4. **Strict separation of concerns.** The interpreter never imports a backend. Backends never import each other. The editor depends on `drawlang` only through its public API. Groups (see below) live inside drawlang source as comment fences, not as a runtime type. PRs that cross these boundaries will be asked to refactor.
