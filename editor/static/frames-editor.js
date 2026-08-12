@@ -154,6 +154,18 @@ document.getElementById('reset-btn').addEventListener('click', () => {
   refreshPreview();
 });
 
+// v0.7: Export DrawLang — saves the composed frame program (title-block
+// values already substituted) as a plain text .drawlang file.
+document.getElementById('export-dl').addEventListener('click', () => {
+  if (!state.drawlang) { setStatus('Nothing to export yet', 'error'); return; }
+  const blob = new Blob([state.drawlang], {type: 'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${state.frameId}.drawlang`; a.click();
+  URL.revokeObjectURL(url);
+  setStatus('DrawLang exported');
+});
+
 document.getElementById('export-svg').addEventListener('click', () => {
   if (!state.svg) return;
   const blob = new Blob([state.svg], {type: 'image/svg+xml'});

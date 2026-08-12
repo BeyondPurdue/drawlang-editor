@@ -56,7 +56,29 @@ CREATE INDEX IF NOT EXISTS idx_statements_canvas
     ON statements(canvas_id, seq);
 CREATE INDEX IF NOT EXISTS idx_statements_group
     ON statements(canvas_id, group_id);
+
+-- v0.7: per-canvas undo/redo stack. Each row snapshots the *body* program
+-- (statements only, no frame) at a point in time. direction='undo' entries
+-- are older-state snapshots pushed on every mutation; direction='redo'
+-- entries are pushed only when the user calls undo, and cleared on the
+-- next mutation. seq increases monotonically per (canvas_id, direction).
+CREATE TABLE IF NOT EXISTS canvas_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    canvas_id   INTEGER NOT NULL,
+    direction   TEXT    NOT NULL,     -- 'undo' | 'redo'
+    seq         INTEGER NOT NULL,
+    program     TEXT    NOT NULL,
+    created_at  REAL    NOT NULL,
+    FOREIGN KEY (canvas_id) REFERENCES canvases(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_history_canvas_dir_seq
+    ON canvas_history(canvas_id, direction, seq DESC);
 """
+
+# Undo/redo depth cap. Older 'undo' entries beyond this are trimmed off the
+# bottom so history storage per canvas stays bounded.
+_HISTORY_MAX_DEPTH = 100
 
 # Additive migrations. Each entry is (column_name, DDL fragment). Runs after
 # SCHEMA and swallows the "duplicate column" error so init() stays idempotent.
@@ -188,6 +210,27 @@ def create_canvas(
             c.execute("ROLLBACK;")
             raise
     return get_canvas(canvas_slug) or {}  # type: ignore[return-value]
+
+
+def duplicate_canvas(id_or_slug: str | int, *, new_slug: str, new_name: str | None = None) -> dict:
+    """Deep-copy a canvas (statements included) to a fresh slug.
+
+    v0.7 file-management helper. History is NOT copied — the new canvas
+    starts with an empty undo/redo stack.
+
+    Raises KeyError if the source is missing, ValueError on slug collision.
+    """
+    src = get_canvas(id_or_slug)
+    if src is None:
+        raise KeyError(f"canvas {id_or_slug!r} not found")
+    canvas = src["canvas"]
+    program = get_canvas_program(id_or_slug, with_frame=False) or ""
+    return create_canvas(
+        new_name or canvas.get("name") or new_slug,
+        slug=new_slug,
+        program=program,
+        frame_id=canvas.get("frame_id"),
+    )
 
 
 def list_canvases() -> list[dict]:
@@ -388,6 +431,172 @@ def _touch_canvas(c: sqlite3.Connection, canvas_id: int, now: float) -> None:
     c.execute("UPDATE canvases SET updated_at = ? WHERE id = ?", (now, canvas_id))
 
 
+# ---------------------------------------------------------------------------
+# v0.7 Undo/Redo history
+# ---------------------------------------------------------------------------
+
+def _current_body_program(c: sqlite3.Connection, canvas_id: int) -> str:
+    """Return the canvas body (statements only, no frame prepend)."""
+    rows = c.execute(
+        "SELECT opcode, args FROM statements WHERE canvas_id = ? ORDER BY seq ASC",
+        (canvas_id,),
+    ).fetchall()
+    return program_from_statements([{"opcode": r[0], "args": r[1]} for r in rows])
+
+
+def _push_history(
+    c: sqlite3.Connection, canvas_id: int, direction: str, program: str, now: float
+) -> None:
+    """Push one snapshot onto the given stack for a canvas."""
+    max_seq_row = c.execute(
+        "SELECT COALESCE(MAX(seq), -1) FROM canvas_history "
+        "WHERE canvas_id = ? AND direction = ?",
+        (canvas_id, direction),
+    ).fetchone()
+    next_seq = (max_seq_row[0] if max_seq_row else -1) + 1
+    c.execute(
+        "INSERT INTO canvas_history (canvas_id, direction, seq, program, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (canvas_id, direction, next_seq, program, now),
+    )
+    # Trim old undo entries so we never store more than _HISTORY_MAX_DEPTH.
+    if direction == "undo":
+        c.execute(
+            "DELETE FROM canvas_history WHERE canvas_id = ? AND direction = 'undo' "
+            "AND seq <= (SELECT MAX(seq) FROM canvas_history "
+            "            WHERE canvas_id = ? AND direction = 'undo') - ?",
+            (canvas_id, canvas_id, _HISTORY_MAX_DEPTH),
+        )
+
+
+def _pop_history(
+    c: sqlite3.Connection, canvas_id: int, direction: str
+) -> str | None:
+    row = c.execute(
+        "SELECT id, program FROM canvas_history "
+        "WHERE canvas_id = ? AND direction = ? ORDER BY seq DESC LIMIT 1",
+        (canvas_id, direction),
+    ).fetchone()
+    if row is None:
+        return None
+    c.execute("DELETE FROM canvas_history WHERE id = ?", (row[0],))
+    return row[1]
+
+
+def _clear_history(
+    c: sqlite3.Connection, canvas_id: int, direction: str
+) -> None:
+    c.execute(
+        "DELETE FROM canvas_history WHERE canvas_id = ? AND direction = ?",
+        (canvas_id, direction),
+    )
+
+
+def _snapshot_pre_mutation(
+    c: sqlite3.Connection, canvas_id: int, now: float
+) -> None:
+    """Called INSIDE an open transaction, BEFORE any mutation is applied.
+
+    Pushes the current body onto the undo stack and clears redo (any new
+    edit invalidates the redo history — same as every editor on earth).
+    """
+    program = _current_body_program(c, canvas_id)
+    _push_history(c, canvas_id, "undo", program, now)
+    _clear_history(c, canvas_id, "redo")
+
+
+def history_depths(id_or_slug: str | int) -> dict:
+    """Return {undo_depth, redo_depth} for a canvas."""
+    row = _resolve_canvas_row(id_or_slug)
+    if row is None:
+        raise KeyError("canvas not found")
+    canvas_id = row[0]
+    c = _conn()
+    u = c.execute(
+        "SELECT COUNT(*) FROM canvas_history WHERE canvas_id = ? AND direction = 'undo'",
+        (canvas_id,),
+    ).fetchone()[0]
+    r = c.execute(
+        "SELECT COUNT(*) FROM canvas_history WHERE canvas_id = ? AND direction = 'redo'",
+        (canvas_id,),
+    ).fetchone()[0]
+    return {"undo_depth": int(u), "redo_depth": int(r)}
+
+
+def undo(id_or_slug: str | int) -> dict | None:
+    """Pop the newest undo snapshot, push the current program onto redo,
+    and replace the canvas body with the popped program.
+
+    Returns {undo_depth, redo_depth} after the operation, or None if the
+    canvas is missing or the undo stack is empty.
+    """
+    row = _resolve_canvas_row(id_or_slug)
+    if row is None:
+        return None
+    canvas_id = row[0]
+    now = time.time()
+    with _lock:
+        c = _conn()
+        c.execute("BEGIN;")
+        try:
+            prev = _pop_history(c, canvas_id, "undo")
+            if prev is None:
+                c.execute("ROLLBACK;")
+                return None
+            current = _current_body_program(c, canvas_id)
+            _push_history(c, canvas_id, "redo", current, now)
+            # Re-populate statements from the popped snapshot.
+            c.execute("DELETE FROM statements WHERE canvas_id = ?", (canvas_id,))
+            pairs = parse_program(prev)
+            for i, (op, args) in enumerate(pairs):
+                c.execute(
+                    "INSERT INTO statements (canvas_id, seq, opcode, args, "
+                    "created_at) VALUES (?, ?, ?, ?, ?)",
+                    (canvas_id, i, op, args, now),
+                )
+            _touch_canvas(c, canvas_id, now)
+            c.execute("COMMIT;")
+        except Exception:
+            c.execute("ROLLBACK;")
+            raise
+    return history_depths(id_or_slug)
+
+
+def redo(id_or_slug: str | int) -> dict | None:
+    """Inverse of undo: pop the newest redo snapshot, push current onto
+    undo, replace canvas body with popped snapshot.
+    """
+    row = _resolve_canvas_row(id_or_slug)
+    if row is None:
+        return None
+    canvas_id = row[0]
+    now = time.time()
+    with _lock:
+        c = _conn()
+        c.execute("BEGIN;")
+        try:
+            future = _pop_history(c, canvas_id, "redo")
+            if future is None:
+                c.execute("ROLLBACK;")
+                return None
+            current = _current_body_program(c, canvas_id)
+            _push_history(c, canvas_id, "undo", current, now)
+            c.execute("DELETE FROM statements WHERE canvas_id = ?", (canvas_id,))
+            pairs = parse_program(future)
+            for i, (op, args) in enumerate(pairs):
+                c.execute(
+                    "INSERT INTO statements (canvas_id, seq, opcode, args, "
+                    "created_at) VALUES (?, ?, ?, ?, ?)",
+                    (canvas_id, i, op, args, now),
+                )
+            _touch_canvas(c, canvas_id, now)
+            c.execute("COMMIT;")
+        except Exception:
+            c.execute("ROLLBACK;")
+            raise
+    return history_depths(id_or_slug)
+
+
 def append_statements(
     id_or_slug: str | int,
     statements: list[dict],
@@ -406,6 +615,7 @@ def append_statements(
         c = _conn()
         c.execute("BEGIN;")
         try:
+            _snapshot_pre_mutation(c, canvas_id, now)
             max_seq_row = c.execute(
                 "SELECT COALESCE(MAX(seq), -1) FROM statements WHERE canvas_id = ?",
                 (canvas_id,),
@@ -470,6 +680,7 @@ def update_statement(
             new_meaning = existing[5]
         c.execute("BEGIN;")
         try:
+            _snapshot_pre_mutation(c, canvas_id, now)
             c.execute(
                 "UPDATE statements SET opcode = ?, args = ?, group_id = ?, "
                 "meaning_tag = ? WHERE id = ?",
@@ -494,6 +705,7 @@ def delete_statement(id_or_slug: str | int, statement_id: int) -> bool:
         c = _conn()
         c.execute("BEGIN;")
         try:
+            _snapshot_pre_mutation(c, canvas_id, now)
             cur = c.execute(
                 "DELETE FROM statements WHERE id = ? AND canvas_id = ?",
                 (statement_id, canvas_id),
@@ -526,6 +738,7 @@ def reorder_statements(
         c = _conn()
         c.execute("BEGIN;")
         try:
+            _snapshot_pre_mutation(c, canvas_id, now)
             all_ids = [
                 r[0] for r in c.execute(
                     "SELECT id FROM statements WHERE canvas_id = ? ORDER BY seq ASC",
@@ -561,6 +774,7 @@ def replace_program(id_or_slug: str | int, program: str) -> dict | None:
         c = _conn()
         c.execute("BEGIN;")
         try:
+            _snapshot_pre_mutation(c, canvas_id, now)
             c.execute("DELETE FROM statements WHERE canvas_id = ?", (canvas_id,))
             for seq, (op, args) in enumerate(pairs):
                 c.execute(
@@ -655,4 +869,8 @@ __all__ += [
     "replace_program",
     "list_statements_by_meaning",
     "list_meaning_index",
+    "undo",
+    "redo",
+    "history_depths",
+    "duplicate_canvas",
 ]

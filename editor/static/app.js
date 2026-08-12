@@ -357,6 +357,18 @@ $("save-btn").addEventListener("click", saveDrawing);
 $("export-svg").addEventListener("click", exportSVG);
 $("export-pdf").addEventListener("click", exportPDF);
 
+// v0.7: Export DrawLang — dump the current editor text as a .drawlang file
+// so the user can save/load their scratch work without going through the
+// canvas save flow.
+$("export-dl").addEventListener("click", () => {
+  const program = editor.value || "";
+  const blob = new Blob([program], {type: "text/plain;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "editor.drawlang"; a.click();
+  URL.revokeObjectURL(url);
+});
+
 $("example-search").addEventListener("input", (e) => {
   searchQuery = e.target.value;
   renderExampleList();

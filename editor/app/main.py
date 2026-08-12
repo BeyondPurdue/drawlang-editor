@@ -105,7 +105,7 @@ def health() -> dict:
         "status": "ok",
         "spec_version": SPEC_VERSION,
         "drawlang_version": pkg_version,
-        "semantic_layer": "0.7.0",  # v0.7 editor milestone (language frozen at v0.6 grammar/opcodes)
+        "semantic_layer": "0.7.1",  # v0.7.1 adds server-side undo/redo, Export DrawLang, duplicate_canvas (language grammar frozen at v0.6)
         "git_sha": _GIT_SHA_CACHE,
     }
 
@@ -868,6 +868,11 @@ class ReorderRequest(BaseModel):
     order: list[int]
 
 
+class CanvasDuplicateRequest(BaseModel):
+    slug: str
+    name: str | None = None
+
+
 class ReplaceProgramRequest(BaseModel):
     program: str
 
@@ -929,6 +934,56 @@ def api_replace_program(id_or_slug: str, req: ReplaceProgramRequest) -> dict:
     data = _canvases.replace_program(id_or_slug, req.program)
     if data is None:
         raise HTTPException(status_code=404, detail="canvas not found")
+    return {"ok": True, **data}
+
+
+# ---------------------------------------------------------------------------
+# v0.7 undo/redo (per-canvas history stack)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/canvases/{id_or_slug}/history")
+def api_history(id_or_slug: str) -> dict:
+    """Return {undo_depth, redo_depth} so the UI can enable/disable buttons."""
+    try:
+        return {"ok": True, **_canvases.history_depths(id_or_slug)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="canvas not found")
+
+
+@app.post("/api/canvases/{id_or_slug}/undo")
+def api_undo(id_or_slug: str) -> dict:
+    data = _canvases.undo(id_or_slug)
+    if data is None:
+        # Distinguish empty stack (200 + no-op) from missing canvas (404).
+        try:
+            depths = _canvases.history_depths(id_or_slug)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="canvas not found")
+        return {"ok": False, "reason": "undo stack empty", **depths}
+    return {"ok": True, **data}
+
+
+@app.post("/api/canvases/{id_or_slug}/duplicate")
+def api_duplicate(id_or_slug: str, req: CanvasDuplicateRequest) -> dict:
+    """v0.7 file management: deep-copy this canvas to a new slug."""
+    try:
+        data = _canvases.duplicate_canvas(id_or_slug, new_slug=req.slug, new_name=req.name)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="canvas not found")
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {"ok": True, "canvas": data.get("canvas", data)}
+
+
+@app.post("/api/canvases/{id_or_slug}/redo")
+def api_redo(id_or_slug: str) -> dict:
+    data = _canvases.redo(id_or_slug)
+    if data is None:
+        try:
+            depths = _canvases.history_depths(id_or_slug)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="canvas not found")
+        return {"ok": False, "reason": "redo stack empty", **depths}
     return {"ok": True, **data}
 
 

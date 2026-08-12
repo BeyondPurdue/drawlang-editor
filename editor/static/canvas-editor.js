@@ -49,6 +49,7 @@ async function loadCanvas(slug) {
     state.statements = [];
     $("svg-host").innerHTML = "";
     renderStatementList();
+    if (typeof refreshHistoryButtons === "function") refreshHistoryButtons();
     return;
   }
   const data = await api(`/api/canvases/${slug}`);
@@ -61,6 +62,7 @@ async function loadCanvas(slug) {
   if (renameEl) renameEl.value = data.canvas?.name || "";
   renderStatementList();
   await renderCanvas();
+  if (typeof refreshHistoryButtons === "function") refreshHistoryButtons();
 }
 
 async function loadFrameList() {
@@ -786,6 +788,11 @@ async function reloadStatements() {
   await renderCanvas();
   await refreshCanvasList();
   await renderMeaningIndex();
+  // v0.7: keep undo/redo button state in sync with the server after any
+  // reload (which is called by every mutation).
+  if (typeof refreshHistoryButtons === "function") {
+    refreshHistoryButtons();
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -899,6 +906,30 @@ $("new-canvas-btn").addEventListener("click", async () => {
   }
 });
 
+// v0.7 file management: Duplicate the current canvas (deep copy including
+// statements and frame binding) to a new slug via POST /duplicate.
+$("dup-canvas-btn").addEventListener("click", async () => {
+  if (!state.currentCanvas) { alert("Choose a canvas to duplicate first"); return; }
+  const suggested = `${state.currentCanvas}-copy`;
+  const slug = prompt("New canvas slug?", suggested);
+  if (!slug) return;
+  const name = prompt("New canvas name?", slug) || slug;
+  try {
+    const res = await fetch(`/api/canvases/${state.currentCanvas}/duplicate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug, name }),
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    await refreshCanvasList();
+    $("canvas-select").value = data.canvas.slug;
+    await loadCanvas(data.canvas.slug);
+  } catch (e) {
+    alert("Duplicate failed: " + e.message);
+  }
+});
+
 // --------------------------------------------------------------------------
 // Library
 // --------------------------------------------------------------------------
@@ -987,6 +1018,85 @@ $("export-svg").addEventListener("click", () => {
   if (!state.currentCanvas) { alert("Choose a canvas first"); return; }
   if (!state.svgSource) { alert("Nothing rendered yet — click Render first"); return; }
   _downloadBlob(new Blob([state.svgSource], { type: "image/svg+xml" }), `${state.currentCanvas}.svg`);
+});
+
+// v0.7: Export DrawLang — downloads the composed program (frame + body) as
+// a text file so the user can reopen it later in any canvas or share it.
+$("export-dl").addEventListener("click", async () => {
+  if (!state.currentCanvas) { alert("Choose a canvas first"); return; }
+  try {
+    const res = await fetch(`/api/canvases/${state.currentCanvas}/program`);
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    const program = await res.text();
+    _downloadBlob(
+      new Blob([program], { type: "text/plain;charset=utf-8" }),
+      `${state.currentCanvas}.drawlang`
+    );
+  } catch (err) {
+    alert("DrawLang export failed: " + err.message);
+  }
+});
+
+// v0.7: server-side Undo/Redo. Every canvas mutation snapshots the pre-state
+// on the backend; these buttons call /api/canvases/{slug}/undo|redo and then
+// re-render. Depths (returned by the endpoints and by GET /history) drive the
+// disabled state so the buttons never lie about what's available.
+async function refreshHistoryButtons() {
+  const undoBtn = $("undo-btn");
+  const redoBtn = $("redo-btn");
+  if (!state.currentCanvas) {
+    undoBtn.disabled = true; redoBtn.disabled = true;
+    return;
+  }
+  try {
+    const res = await fetch(`/api/canvases/${state.currentCanvas}/history`);
+    if (!res.ok) return;
+    const d = await res.json();
+    undoBtn.disabled = (d.undo_depth || 0) === 0;
+    redoBtn.disabled = (d.redo_depth || 0) === 0;
+    undoBtn.title = `Undo (${d.undo_depth || 0} available) — Ctrl/Cmd+Z`;
+    redoBtn.title = `Redo (${d.redo_depth || 0} available) — Ctrl/Cmd+Shift+Z`;
+  } catch (_) { /* leave buttons in previous state on transient errors */ }
+}
+
+async function doUndo() {
+  if (!state.currentCanvas) return;
+  const res = await fetch(`/api/canvases/${state.currentCanvas}/undo`, { method: "POST" });
+  if (!res.ok) { alert("Undo failed: " + await res.text()); return; }
+  const d = await res.json();
+  if (!d.ok) return refreshHistoryButtons();   // stack was empty
+  await reloadStatements();   // this already re-renders the canvas
+  refreshHistoryButtons();
+}
+
+async function doRedo() {
+  if (!state.currentCanvas) return;
+  const res = await fetch(`/api/canvases/${state.currentCanvas}/redo`, { method: "POST" });
+  if (!res.ok) { alert("Redo failed: " + await res.text()); return; }
+  const d = await res.json();
+  if (!d.ok) return refreshHistoryButtons();
+  await reloadStatements();
+  refreshHistoryButtons();
+}
+
+$("undo-btn").addEventListener("click", doUndo);
+$("redo-btn").addEventListener("click", doRedo);
+
+// Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) = redo. Ignore when the
+// focus is inside a text input so we don't hijack the browser's own undo
+// on the code editor / rename box / inline stmt edit.
+document.addEventListener("keydown", (e) => {
+  const tag = (e.target && e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || (e.target && e.target.isContentEditable)) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod) return;
+  if (e.key === "z" || e.key === "Z") {
+    e.preventDefault();
+    if (e.shiftKey) doRedo(); else doUndo();
+  } else if (e.key === "y" || e.key === "Y") {
+    e.preventDefault();
+    doRedo();
+  }
 });
 
 $("export-pdf").addEventListener("click", async () => {
