@@ -502,14 +502,23 @@ function renderStatementList() {
   // v0.7.2: text-editor mode — each row is a focusable line. tabindex="0"
   // makes rows keyboard-navigable; a lightweight cursor pointer tracks
   // which row is "current" for Enter-to-insert / ↑↓ / Backspace.
+  // v0.8.1: each row exposes drag grip + insert-above / insert-below /
+  // delete buttons. All three are only visible on hover / cursor; the
+  // underlying APIs are the ones already used by the keyboard shortcuts
+  // (POST /statements/insert, DELETE /statements/{id}).
   el.innerHTML = state.statements.map((s) => {
     const sel = state.selectedIds.has(s.id) ? " selected" : "";
     const cur = (state.cursorId === s.id) ? " cursor" : "";
-    return `<div class="stmt-row${sel}${cur}" data-id="${s.id}" tabindex="0">
+    return `<div class="stmt-row${sel}${cur}" data-id="${s.id}" data-seq="${s.seq}" tabindex="0" draggable="true">
+      <span class="stmt-grip" title="Drag to reorder">⋮</span>
       <span class="stmt-seq">${s.seq}</span>
       <span class="stmt-op" data-edit-op="${s.id}" title="Click to edit opcode (Enter=next line)">${escapeAttr(s.opcode)}</span>
       <span class="stmt-args" data-edit-args="${s.id}" title="Click to edit args (Enter=next line)">${escapeAttr(s.args)}</span>
-      <span class="stmt-del" data-del="${s.id}" title="Delete">✕</span>
+      <span class="stmt-actions">
+        <button data-insert-before="${s.id}" title="Insert line above (⇧Enter)">+↑</button>
+        <button data-insert-after="${s.id}" title="Insert line below (Enter)">+↓</button>
+        <button class="stmt-del" data-del="${s.id}" title="Delete (Del)">✕</button>
+      </span>
     </div>`;
   }).join("");
 
@@ -548,6 +557,25 @@ function renderStatementList() {
       await reloadStatements();
     });
   });
+  // v0.8.1: per-row insert-above / insert-below buttons.
+  el.querySelectorAll("[data-insert-before]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = parseInt(btn.dataset.insertBefore);
+      state.cursorId = id;
+      await insertLineBefore(id);
+    });
+  });
+  el.querySelectorAll("[data-insert-after]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = parseInt(btn.dataset.insertAfter);
+      state.cursorId = id;
+      await insertLineAfter(id);
+    });
+  });
+  // v0.8.1: drag-to-reorder using the existing /statements/reorder API.
+  wireStatementDrag(el);
   // Restore focus + cursor highlight after a re-render so keyboard flow
   // survives every reload.
   if (state.cursorId != null) {
@@ -1203,21 +1231,41 @@ async function reloadStatements() {
 }
 
 // --------------------------------------------------------------------------
-// Command input (append statement)
+// Command input (append statement, or insert after cursor when one exists)
 // --------------------------------------------------------------------------
+// v0.8.1: if there is a cursor row, insert the new statement after it; else
+// append at the end. Same UI, same input box — semantics just track the
+// keyboard flow. Uses POST /statements/insert with seq = cursor.seq + 1.
 $("cmd-add").addEventListener("click", async () => {
   if (!state.currentCanvas) return alert("Choose a canvas first");
   const raw = $("cmd-input").value.trim();
   if (!raw) return;
   // Detect: does it look like raw drawlang (opcode,arg format) or natural language?
   const looksRaw = /^[a-z]{2},/i.test(raw);
+  const cursorStmt = state.cursorId != null
+    ? state.statements.find((s) => s.id === state.cursorId)
+    : null;
   try {
     if (looksRaw) {
+      // Parse "opcode,args" so we can honour cursor insert; keep the old
+      // multi-statement fallback if the user pasted a whole program.
       const withSemi = raw.endsWith(";") ? raw : raw + ";";
-      await api(`/api/canvases/${state.currentCanvas}/statements`, {
-        method: "POST",
-        body: JSON.stringify({ program: withSemi }),
-      });
+      const singleMatch = raw.match(/^([a-z]{2})(?:,(.*))?$/i);
+      if (cursorStmt && singleMatch && !raw.includes(";")) {
+        await api(`/api/canvases/${state.currentCanvas}/statements/insert`, {
+          method: "POST",
+          body: JSON.stringify({
+            seq: cursorStmt.seq + 1,
+            opcode: singleMatch[1],
+            args: (singleMatch[2] || "").trim(),
+          }),
+        });
+      } else {
+        await api(`/api/canvases/${state.currentCanvas}/statements`, {
+          method: "POST",
+          body: JSON.stringify({ program: withSemi }),
+        });
+      }
     } else {
       // Natural-language path.
       // v0.7.7: if there's a live selection, try selection-transform first
@@ -1259,6 +1307,71 @@ $("cmd-add").addEventListener("click", async () => {
   }
 });
 
+// --------------------------------------------------------------------------
+// v0.8.1 drag-to-reorder
+// --------------------------------------------------------------------------
+// One reorder API call per drop. The reorder API takes the full desired
+// id order; the row's midpoint decides above-vs-below insertion.
+let _dragId = null;
+function wireStatementDrag(container) {
+  container.querySelectorAll(".stmt-row").forEach((row) => {
+    row.addEventListener("dragstart", (e) => {
+      _dragId = parseInt(row.dataset.id);
+      row.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      // Firefox needs some payload for drag to fire.
+      try { e.dataTransfer.setData("text/plain", String(_dragId)); } catch (_) {}
+    });
+    row.addEventListener("dragend", () => {
+      row.classList.remove("dragging");
+      container.querySelectorAll(".stmt-row").forEach((r) => {
+        r.classList.remove("drag-over-top", "drag-over-bot");
+      });
+      _dragId = null;
+    });
+    row.addEventListener("dragover", (e) => {
+      if (_dragId == null) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const rect = row.getBoundingClientRect();
+      const above = (e.clientY - rect.top) < rect.height / 2;
+      row.classList.toggle("drag-over-top", above);
+      row.classList.toggle("drag-over-bot", !above);
+    });
+    row.addEventListener("dragleave", () => {
+      row.classList.remove("drag-over-top", "drag-over-bot");
+    });
+    row.addEventListener("drop", async (e) => {
+      if (_dragId == null) return;
+      e.preventDefault();
+      const targetId = parseInt(row.dataset.id);
+      const rect = row.getBoundingClientRect();
+      const above = (e.clientY - rect.top) < rect.height / 2;
+      row.classList.remove("drag-over-top", "drag-over-bot");
+      const draggedId = _dragId;
+      _dragId = null;
+      if (draggedId === targetId) return;
+      // Build the new id order.
+      const ids = state.statements.map((s) => s.id).filter((id) => id !== draggedId);
+      const targetIdx = ids.indexOf(targetId);
+      if (targetIdx === -1) return;
+      const insertAt = above ? targetIdx : targetIdx + 1;
+      ids.splice(insertAt, 0, draggedId);
+      try {
+        await api(`/api/canvases/${state.currentCanvas}/statements/reorder`, {
+          method: "POST",
+          body: JSON.stringify({ order: ids }),
+        });
+        state.cursorId = draggedId;
+        await reloadStatements();
+      } catch (err) {
+        $("stmt-status").textContent = "Reorder failed: " + err.message;
+        $("stmt-status").className = "status err";
+      }
+    });
+  });
+}
+
 // Voice input via Web Speech API
 $("mic-btn").addEventListener("click", () => {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1276,7 +1389,7 @@ $("mic-btn").addEventListener("click", () => {
   rec.onresult = (e) => {
     const heard = e.results[0][0].transcript;
     $("cmd-input").value = heard;
-    $("stmt-status").textContent = `Heard: "${heard}" — click Append to run`;
+    $("stmt-status").textContent = `Heard: "${heard}" — click Insert to run`;
   };
   rec.onerror = (e) => {
     $("stmt-status").textContent = `Voice error: ${e.error}`;
