@@ -31,7 +31,7 @@ header button.danger { color: #A12C7B; }
 .main { flex: 1; display: flex; overflow: hidden; }
 
 .sidebar {
-  width: 260px; background: #FBFBF9; border-right: 1px solid #D4D1CA;
+  width: 240px; background: #FBFBF9; border-right: 1px solid #D4D1CA;
   overflow-y: auto; display: flex; flex-direction: column;
 }
 .sidebar h2 { margin: 0; padding: 12px 16px 8px; font-size: 12px; font-weight: 600;
@@ -56,20 +56,6 @@ header button.danger { color: #A12C7B; }
 .sidebar-actions button.danger { color: #A12C7B; }
 
 .editor-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.tabs {
-  display: flex; gap: 0; padding: 0 16px; background: #FBFBF9;
-  border-bottom: 1px solid #D4D1CA;
-}
-.tab {
-  padding: 10px 16px; font-size: 13px; cursor: pointer; user-select: none;
-  border-bottom: 2px solid transparent; color: #7A7974;
-}
-.tab:hover { color: #28251D; }
-.tab.active { color: #01696F; border-bottom-color: #01696F; font-weight: 500; }
-
-.tab-content { flex: 1; overflow: auto; display: none; padding: 16px 20px; }
-.tab-content.active { display: block; }
-.tab-content.drawlang-tab, .tab-content.fields-tab { padding: 0; }
 
 /* Meta editor row */
 .meta-row {
@@ -88,16 +74,104 @@ header button.danger { color: #A12C7B; }
 .meta-row input:focus { outline: none; border-color: #01696F; box-shadow: 0 0 0 2px rgba(1,105,111,0.15); }
 .meta-row input:disabled { background: #F2F1EC; color: #7A7974; }
 
-/* Drawlang tab */
-.drawlang-tab textarea {
-  width: 100%; height: 100%; padding: 12px 16px;
+.tabs {
+  display: flex; gap: 0; padding: 0 16px; background: #FBFBF9;
+  border-bottom: 1px solid #D4D1CA;
+}
+.tab {
+  padding: 10px 16px; font-size: 13px; cursor: pointer; user-select: none;
+  border-bottom: 2px solid transparent; color: #7A7974;
+}
+.tab:hover { color: #28251D; }
+.tab.active { color: #01696F; border-bottom-color: #01696F; font-weight: 500; }
+
+.tab-content { flex: 1; overflow: hidden; display: none; }
+.tab-content.active { display: flex; flex-direction: column; }
+
+/* ---- STATEMENTS TAB — canvas parity ---- */
+.stmts-tab { flex-direction: row !important; }
+.stmts-tab .left {
+  width: 45%; min-width: 320px; max-width: 620px;
+  border-right: 1px solid #D4D1CA; background: #FBFBF9;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.stmts-tab .left h3 {
+  margin: 0; padding: 10px 16px; font-size: 12px; font-weight: 600; color: #7A7974;
+  text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #D4D1CA;
+}
+.stmts-tab .stmt-list-wrap { flex: 1; overflow: auto; padding: 8px; }
+.stmts-tab .stmt-list {
+  font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace;
+  background: #fff; border: 1px solid #D4D1CA; border-radius: 4px; padding: 6px;
+  min-height: 100%;
+}
+.stmt-row {
+  display: flex; align-items: center; gap: 6px; padding: 2px 4px;
+  border-radius: 3px; cursor: pointer;
+}
+.stmt-row:hover { background: #f0efe9; }
+.stmt-row.cursor { border-left: 3px solid #f6b93b; background: #fdf6ea; }
+.stmt-row.selected { background: #d9edf0; }
+.stmt-row.drag-over-top { box-shadow: inset 0 2px 0 0 #01696f; }
+.stmt-row.drag-over-bot { box-shadow: inset 0 -2px 0 0 #01696f; }
+.stmt-row.dragging { opacity: 0.4; }
+.stmt-row.comment { color: #7A7974; font-style: italic; }
+.stmt-grip {
+  color: #bab9b4; cursor: grab; width: 12px; text-align: center; user-select: none;
+  opacity: 0; font-size: 14px; line-height: 1;
+}
+.stmt-grip:active { cursor: grabbing; }
+.stmt-row:hover .stmt-grip { opacity: 1; }
+.stmt-seq { color: #7a7974; width: 28px; text-align: right; }
+.stmt-op { color: #01696f; font-weight: 600; width: 24px; }
+.stmt-args { flex: 1; color: #28251d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stmt-row .stmt-op[contenteditable], .stmt-row .stmt-args[contenteditable] {
+  background: #fff; outline: 1px solid #01696f; border-radius: 2px; padding: 0 2px;
+}
+.stmt-actions { display: flex; gap: 2px; opacity: 0; }
+.stmt-row:hover .stmt-actions,
+.stmt-row.cursor .stmt-actions { opacity: 1; }
+.stmt-actions button {
+  background: none; border: 0; color: #7a7974; cursor: pointer;
+  padding: 0 4px; font-size: 13px; line-height: 1; border-radius: 3px;
+}
+.stmt-actions button:hover { background: #d4d1ca; color: #28251d; }
+.stmt-actions button.stmt-del { color: #a12c7b; }
+.stmt-actions button.stmt-del:hover { background: #f5d5e7; color: #a12c7b; }
+.cmd-input { display: flex; gap: 4px; padding: 8px; border-top: 1px solid #D4D1CA;
+  background: #FBFBF9; }
+.cmd-input input {
+  flex: 1; font: 12px ui-monospace, Menlo, Consolas, monospace; padding: 6px;
+  border: 1px solid #d4d1ca; border-radius: 4px;
+}
+.cmd-input button { padding: 6px 12px; }
+.stmt-hint { font-size: 11px; color: #7A7974; padding: 0 8px 8px; line-height: 1.5;
+  background: #FBFBF9; }
+.stmt-hint kbd {
+  background: #f0efe9; border: 1px solid #d4d1ca; border-radius: 3px;
+  padding: 0 4px; font: inherit; font-family: ui-monospace, Menlo, Consolas, monospace;
+  color: #28251d;
+}
+.stmts-tab .right {
+  flex: 1; overflow: auto; background: #ECEAE3; padding: 20px;
+  display: flex; align-items: flex-start; justify-content: center;
+}
+.stmts-tab .right svg { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  max-width: 100%; height: auto; }
+.stmts-tab .right .preview-empty { color: #7A7974; padding: 40px; text-align: center; }
+.stmts-tab .right .preview-error { color: #A12C7B; padding: 20px; }
+
+/* ---- RAW TAB (drawlang textarea, for paste/bulk edits) ---- */
+.raw-tab textarea {
+  width: 100%; flex: 1; padding: 12px 16px;
   border: none; outline: none; resize: none;
   font-family: "SF Mono", Consolas, Menlo, monospace;
-  font-size: 13px; line-height: 1.5; background: #fff; color: #28251D;
+  font-size: 13px; line-height: 1.5; background: #fff; color: #28251d;
 }
 
-/* Fields tab */
-.fields-tab { padding: 16px 20px; }
+/* ---- FIELDS TAB ---- */
+.fields-tab { padding: 16px 20px; overflow: auto !important; }
+.fields-tab.active { display: block !important; }
 .fields-toolbar {
   display: flex; gap: 8px; margin-bottom: 12px; align-items: center;
 }
@@ -141,19 +215,10 @@ header button.danger { color: #A12C7B; }
   background: #FBFBF9; border: 1px dashed #D4D1CA; border-radius: 6px;
 }
 
-/* Preview tab — only render as flex when active; base .tab-content rule
-   keeps it hidden until its tab is selected. */
-.preview-tab { background: #ECEAE3; padding: 20px; }
-.preview-tab.active { display: flex; justify-content: center; align-items: flex-start; }
-.preview-tab svg { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-  max-width: 100%; height: auto; }
-.preview-empty { color: #7A7974; padding: 40px; text-align: center; width: 100%; }
-
 .error { color: #A12C7B; padding: 8px 12px; background: rgba(161,44,123,0.08);
   border-radius: 4px; margin: 8px 0; font-size: 13px; }
 .success { color: #437A22; padding: 4px 12px; font-size: 13px; }
 
-/* Empty pane */
 .empty-pane {
   flex: 1; display: flex; align-items: center; justify-content: center;
   color: #7A7974; font-size: 14px;
@@ -181,7 +246,7 @@ header button.danger { color: #A12C7B; }
   </aside>
   <div class="editor-pane" id="editor-pane">
     <div class="empty-pane" id="empty-pane">Select a frame or create a new one.</div>
-    <div id="frame-body" style="display:none; flex:1; display:none; flex-direction:column; overflow:hidden;">
+    <div id="frame-body" style="display:none; flex:1; flex-direction:column; overflow:hidden;">
       <div class="meta-row">
         <div class="field">
           <label>Frame id</label>
@@ -193,14 +258,39 @@ header button.danger { color: #A12C7B; }
         </div>
       </div>
       <div class="tabs">
-        <div class="tab active" data-tab="drawlang">DrawLang</div>
+        <div class="tab active" data-tab="stmts">Statements</div>
+        <div class="tab" data-tab="raw">Raw</div>
         <div class="tab" data-tab="fields">Fields</div>
-        <div class="tab" data-tab="preview">Preview</div>
       </div>
-      <div class="tab-content drawlang-tab active" data-tab="drawlang">
+      <!-- Statements tab: same canvas-editor UX -->
+      <div class="tab-content stmts-tab active" data-tab="stmts">
+        <div class="left">
+          <h3>Statements</h3>
+          <div class="stmt-list-wrap">
+            <div id="stmt-list" class="stmt-list"></div>
+          </div>
+          <div class="stmt-hint">
+            Hover a line for <kbd>+↑</kbd>, <kbd>+↓</kbd>, <kbd>✕</kbd>. Drag <kbd>⋮</kbd>
+            to reorder. Or use <kbd>Enter</kbd>, <kbd>⇧Enter</kbd>, <kbd>Del</kbd>,
+            <kbd>↑↓</kbd>. Click an opcode/args cell to edit inline. Use
+            <code>{{token_name}}</code> tokens in args to declare editable fields.
+          </div>
+          <div class="cmd-input">
+            <input id="cmd-input" type="text"
+              placeholder="e.g. mr,20,0 — insert after current row (or append)">
+            <button id="cmd-add">Insert</button>
+          </div>
+        </div>
+        <div class="right" id="stmt-preview">
+          <div class="preview-empty">Add statements to see a live preview.</div>
+        </div>
+      </div>
+      <!-- Raw tab: textarea for bulk paste / free-form editing -->
+      <div class="tab-content raw-tab" data-tab="raw">
         <textarea id="drawlang-input" spellcheck="false"
           placeholder="Frame drawlang. Use {{token_name}} placeholders for editable fields."></textarea>
       </div>
+      <!-- Fields tab: declare/edit editable placeholders -->
       <div class="tab-content fields-tab" data-tab="fields">
         <div class="fields-toolbar">
           <button id="scan-btn">Scan drawlang for tokens</button>
@@ -224,9 +314,6 @@ header button.danger { color: #A12C7B; }
           No fields yet. Click <b>Scan drawlang for tokens</b> to detect
           <code>{{name}}</code> placeholders, or <b>+ Add field</b> to declare one manually.
         </div>
-      </div>
-      <div class="tab-content preview-tab" data-tab="preview">
-        <div id="preview" class="preview-empty">Save the frame to render a preview.</div>
       </div>
     </div>
   </div>
