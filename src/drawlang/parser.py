@@ -346,9 +346,23 @@ def _split_with_string_tail(tail: str, spec: dict) -> list[str]:
     string_index = spec["string_tail"]
     types = spec["args"]
 
-    # Split the leading arguments up to and including the one right before the string.
-    # For `tx`, string_index=1, so we split off the first (index 0) field.
-    parts = tail.split(",", string_index + 1)
+    # Split off exactly `string_index` leading positional fields, gluing
+    # everything else (the raw text plus any trailing `,c<n>` modifier,
+    # commas and all) into one final element.
+    #
+    # v0.7 fix: this used to be `tail.split(",", string_index + 1)`, which
+    # is off by one. For `tx` (string_index=1) that extra split meant a
+    # comma count of exactly 2 (e.g. `0,AND,c8`) got fully separated into
+    # three atomic parts `['0', 'AND', 'c8']` instead of `['0', 'AND,c8']`.
+    # `remainder` below is then read from `parts[string_index]`, which in
+    # that fully-split case is `'AND'` — silently dropping the trailing
+    # `c8` on the floor. The color modifier was accepted by the validator
+    # (never raised), so `tx,0,AND,c8;` looked valid but rendered in ink,
+    # not the requested color, with no error. `string_index` (not `+1`)
+    # is the correct maxsplit: it performs exactly the splits needed to
+    # peel off the leading positional args and leaves the remainder intact
+    # as a single string, however many commas it contains.
+    parts = tail.split(",", string_index)
     # If tail is empty or too short, produce what we have — validation will fail later.
     if len(parts) < string_index + 1:
         return [p.strip() for p in parts]
