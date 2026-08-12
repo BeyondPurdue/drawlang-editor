@@ -171,29 +171,56 @@ function hookSvgEvents(svg) {
   const DRAG_THRESHOLD_PX = 4;
   let downOnElement = null;   // the [data-statement-id] under mousedown, or null
   let downClient = null;      // {x,y} at mousedown in client px
+  let downPaper = null;       // {x,y} at mousedown in SVG paper coords
   let downShift = false;
   let dragging = false;       // true once past threshold
   let rubber = null;          // DOM <div> rubber-band overlay
+  // v0.7.7 — move-mode. Down inside an already-selected shape (no Shift)
+  // starts a live translation of every selected <g>. Mouseup commits the
+  // paper-space delta by calling nudgeSelection() so the server is the
+  // source of truth.
+  let moveMode = false;
+  let moveGroups = [];
 
   host.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;         // left only
     if (state.pendingDrop) return;      // drop path handled in mouseup->click
     downClient = { x: e.clientX, y: e.clientY };
+    downPaper = svgPoint(svg, e);
     downShift = e.shiftKey;
     downOnElement = e.target.closest("[data-statement-id]");
     dragging = false;
+    moveMode = false;
+    moveGroups = [];
+    if (downOnElement && !downShift) {
+      const id = parseInt(downOnElement.getAttribute("data-statement-id"), 10);
+      if (Number.isFinite(id) && state.selectedIds && state.selectedIds.has(id)) {
+        moveMode = true;
+        moveGroups = Array.from(
+          svg.querySelectorAll("[data-statement-id]")
+        ).filter((g) => state.selectedIds.has(
+          parseInt(g.getAttribute("data-statement-id"), 10)
+        ));
+      }
+    }
   });
 
   document.addEventListener("mousemove", (e) => {
     if (!downClient || state.pendingDrop) return;
-    const dx = e.clientX - downClient.x;
-    const dy = e.clientY - downClient.y;
-    if (!dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
-    // We only rubber-band when the drag started on empty canvas OR the user
-    // is holding Shift (marquee-add). Dragging on top of a shape without
-    // Shift stays a click — keeps things predictable.
-    if (downOnElement && !downShift) { dragging = true; return; }
+    const cdx = e.clientX - downClient.x;
+    const cdy = e.clientY - downClient.y;
+    if (!dragging && Math.hypot(cdx, cdy) < DRAG_THRESHOLD_PX) return;
     dragging = true;
+    if (moveMode) {
+      const p = svgPoint(svg, e);
+      const dxSvg = p.x - downPaper.x;
+      const dySvg = p.y - downPaper.y;
+      for (const g of moveGroups) {
+        g.setAttribute("transform", `translate(${dxSvg} ${dySvg})`);
+      }
+      return;
+    }
+    if (downOnElement && !downShift) return;
     if (!rubber) {
       rubber = document.createElement("div");
       rubber.className = "rubber-band";
@@ -214,15 +241,35 @@ function hookSvgEvents(svg) {
     const wasDrag = dragging;
     const shift = downShift;
     const startedOn = downOnElement;
+    const wasMove = moveMode;
+    const groupsAtStart = moveGroups.slice();
+    const startPaper = downPaper;
     const rect = rubber ? rubber.getBoundingClientRect() : null;
     // Clear state before we mutate selection so re-entrant events are safe.
     downClient = null;
+    downPaper = null;
     downOnElement = null;
     downShift = false;
     dragging = false;
+    moveMode = false;
+    moveGroups = [];
     if (rubber) { rubber.remove(); rubber = null; }
 
     if (state.pendingDrop) return;   // click path handled in host.onclick below
+
+    if (wasMove) {
+      // Commit paper-space delta. Round to int (grammar stores integers).
+      // The outer render uses transform=scale(1,-1) to flip y for print,
+      // which means our SVG-space dy is the *negative* of paper-space dy.
+      const p = svgPoint(svg, e);
+      const dxPaper = Math.round(p.x - startPaper.x);
+      const dyPaper = Math.round(p.y - startPaper.y);
+      for (const g of groupsAtStart) g.removeAttribute("transform");
+      if (wasDrag && (dxPaper !== 0 || dyPaper !== 0)) {
+        nudgeSelection(dxPaper, -dyPaper);
+      }
+      return;
+    }
 
     if (wasDrag && rect && (rect.width > DRAG_THRESHOLD_PX || rect.height > DRAG_THRESHOLD_PX)) {
       const hits = elementsIntersectingClientRect(svg, rect);
@@ -752,6 +799,80 @@ function _mirrorArgs(stmt, axis, pivot) {
   return null;
 }
 
+// v0.7.7 — scale a statement's args by factor `k`.
+// Around the selection centroid (integer-rounded so v0.6 grammar stays
+// integer-only). Relative opcodes (mr/dl) scale their deltas; ma is scaled
+// around the pivot so the group's centre-of-gravity stays put; rt scales
+// w,h; ci scales r; bz scales every coordinate pair around the pivot; ar
+// scales r (radius) and leaves the sweep alone; sp scales each polyline
+// vertex around the pivot; im scales its w,h (id stays). tx untouched.
+function _scaleArgs(stmt, k, pivot) {
+  const a = _parseArgs(stmt.args);
+  const op = stmt.opcode;
+  const rnd = (v) => Math.round(v);
+  if (op === "mr" || op === "dl") {
+    if (typeof a[0] !== "number" || typeof a[1] !== "number") return null;
+    return _joinArgs([rnd(a[0] * k), rnd(a[1] * k), ...a.slice(2)]);
+  }
+  if (op === "ma") {
+    if (typeof a[0] !== "number" || typeof a[1] !== "number") return null;
+    return _joinArgs([
+      rnd(pivot.cx + (a[0] - pivot.cx) * k),
+      rnd(pivot.cy + (a[1] - pivot.cy) * k),
+      ...a.slice(2),
+    ]);
+  }
+  if (op === "rt") {
+    if (typeof a[0] !== "number" || typeof a[1] !== "number") return null;
+    return _joinArgs([rnd(a[0] * k), rnd(a[1] * k), ...a.slice(2)]);
+  }
+  if (op === "ci") {
+    if (typeof a[0] !== "number") return null;
+    return _joinArgs([rnd(a[0] * k), ...a.slice(1)]);
+  }
+  if (op === "ar") {
+    // ar: r, start, sweep — scale radius, keep angles.
+    if (typeof a[0] !== "number") return null;
+    return _joinArgs([rnd(a[0] * k), ...a.slice(1)]);
+  }
+  if (op === "bz") {
+    // bz: cx1, cy1, cx2, cy2, ex, ey — all relative deltas from pen. Scale each.
+    if (a.length < 6) return null;
+    return _joinArgs([
+      rnd(a[0] * k), rnd(a[1] * k),
+      rnd(a[2] * k), rnd(a[3] * k),
+      rnd(a[4] * k), rnd(a[5] * k),
+      ...a.slice(6),
+    ]);
+  }
+  if (op === "sp") {
+    // sp: x1,y1,x2,y2,...,xn,yn — absolute polyline vertices. Scale about pivot.
+    if (a.length < 2 || a.length % 2 !== 0) return null;
+    const out = [];
+    for (let i = 0; i < a.length; i += 2) {
+      if (typeof a[i] !== "number" || typeof a[i+1] !== "number") return null;
+      out.push(rnd(pivot.cx + (a[i]   - pivot.cx) * k));
+      out.push(rnd(pivot.cy + (a[i+1] - pivot.cy) * k));
+    }
+    return _joinArgs(out);
+  }
+  if (op === "im") {
+    // im: id, w, h — scale w,h; id untouched.
+    if (a.length < 3 || typeof a[1] !== "number" || typeof a[2] !== "number") return null;
+    return _joinArgs([a[0], rnd(a[1] * k), rnd(a[2] * k), ...a.slice(3)]);
+  }
+  // tx (angle,text) — skip. Users can edit size in the tx statement itself.
+  return null;
+}
+
+async function scaleSelection(factor) {
+  if (!(factor > 0)) return;
+  const stmts = state.statements.filter((s) => state.selectedIds.has(s.id));
+  if (!stmts.length) return;
+  const pivot = _selectionCentroid(stmts);
+  await _transformSelection((s) => _scaleArgs(s, factor, pivot));
+}
+
 async function rotateSelection(quadrant) {
   const stmts = state.statements.filter((s) => state.selectedIds.has(s.id));
   const pivot = _selectionCentroid(stmts);
@@ -897,6 +1018,10 @@ function _bubbleToolbar(n) {
       <button data-act="rot-180" title="Rotate 180°">180°</button>
       <button data-act="mir-h"   title="Mirror horizontally (flip X)">⇔ H</button>
       <button data-act="mir-v"   title="Mirror vertically (flip Y)">⇕ V</button>
+      <button data-act="scale-up"   title="Scale up (×1.1)">+ 10%</button>
+      <button data-act="scale-down" title="Scale down (÷1.1)">− 10%</button>
+      <button data-act="scale-2x"   title="Double size">×2</button>
+      <button data-act="scale-half" title="Half size">÷2</button>
       <button data-act="dup"     title="Duplicate selection">Duplicate</button>
       <button data-act="grp"     title="Group selection (assign shared group_id)" ${n < 2 ? "disabled" : ""}>Group</button>
       <button data-act="ungrp"   title="Ungroup (clear group_id)">Ungroup</button>
@@ -918,6 +1043,10 @@ function _wireBubbleButtons(panel) {
         else if (act === "rot-180") await rotateSelection(180);
         else if (act === "mir-h") await mirrorSelection("h");
         else if (act === "mir-v") await mirrorSelection("v");
+        else if (act === "scale-up")   await scaleSelection(1.1);
+        else if (act === "scale-down") await scaleSelection(1/1.1);
+        else if (act === "scale-2x")   await scaleSelection(2);
+        else if (act === "scale-half") await scaleSelection(0.5);
         else if (act === "dup") await duplicateSelection();
         else if (act === "grp") await groupSelection();
         else if (act === "ungrp") await ungroupSelection();
@@ -1050,11 +1179,37 @@ $("cmd-add").addEventListener("click", async () => {
         body: JSON.stringify({ program: withSemi }),
       });
     } else {
-      // Natural-language path
-      await api("/api/nlp/translate", {
-        method: "POST",
-        body: JSON.stringify({ text: raw, canvas_id: state.currentCanvas }),
-      });
+      // Natural-language path.
+      // v0.7.7: if there's a live selection, try selection-transform first
+      // (mouse/keyboard already accept these; voice should too). Fall back
+      // to the statement-creation translator otherwise.
+      let handled = false;
+      if (state.selectedIds && state.selectedIds.size > 0) {
+        try {
+          const r = await fetch("/api/nlp/selection", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: raw }),
+          });
+          if (r.ok) {
+            const j = await r.json();
+            const act = j.action;
+            if (act && act.op === "shift") {
+              await nudgeSelection(act.dx | 0, act.dy | 0);
+              handled = true;
+            } else if (act && act.op === "scale") {
+              await scaleSelection(Number(act.factor));
+              handled = true;
+            }
+          }
+        } catch (_) { /* fall through */ }
+      }
+      if (!handled) {
+        await api("/api/nlp/translate", {
+          method: "POST",
+          body: JSON.stringify({ text: raw, canvas_id: state.currentCanvas }),
+        });
+      }
     }
     $("cmd-input").value = "";
     await reloadStatements();
@@ -2427,6 +2582,8 @@ async function dropOpcodeHere(opcode, args, x, y) {
         else if (act === "rot-180") await rotateSelection(180);
         else if (act === "mir-h") await mirrorSelection("h");
         else if (act === "mir-v") await mirrorSelection("v");
+        else if (act === "scale-up")   await scaleSelection(1.1);
+        else if (act === "scale-down") await scaleSelection(1/1.1);
         else if (act === "dup") await duplicateSelection();
         else if (act === "copy") await copySelectionAsDrawlang();
         else if (act === "del") {

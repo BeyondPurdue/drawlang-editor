@@ -105,7 +105,7 @@ def health() -> dict:
         "status": "ok",
         "spec_version": SPEC_VERSION,
         "drawlang_version": pkg_version,
-        "semantic_layer": "0.7.6.3",  # v0.7.6.3 Toolbar wraps instead of scrolling (grammar frozen at v0.6)
+        "semantic_layer": "0.7.7",  # v0.7.7 Selection: mouse drag + scale + mic transform commands (grammar frozen at v0.6)
         "git_sha": _GIT_SHA_CACHE,
     }
 
@@ -1200,11 +1200,39 @@ def api_library_drop(
 # ---------------------------------------------------------------------------
 
 from app import nlp as _nlp  # noqa: E402
+from app import selection_cmds as _selection_cmds  # noqa: E402
 
 
 class NLPRequest(BaseModel):
     text: str
     canvas_id: str | None = None  # if set, statements are appended there
+
+
+class SelectionCommandRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/nlp/selection")
+def api_nlp_selection(req: SelectionCommandRequest) -> dict:
+    """Parse a natural-language *selection-transform* command.
+
+    Returns one of
+        {"op": "shift", "dx": int, "dy": int}
+        {"op": "scale", "factor": float}
+    without mutating any canvas. The caller applies the transform via
+    the existing statement PATCH endpoints (frontend uses nudgeSelection
+    or scaleSelection). Grammar is frozen at v0.6 so no new opcode is
+    introduced.
+
+    HTTP 400 with a helpful message if the phrase does not match; the
+    caller should treat that as "not a selection command" and fall back
+    to /api/nlp/translate.
+    """
+    try:
+        action = _selection_cmds.parse(req.text)
+    except _selection_cmds.SelectionCommandError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "action": action}
 
 
 @app.post("/api/nlp/translate")
