@@ -14,14 +14,15 @@ lives in the interpreter — the editor knows nothing about opcodes.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -41,6 +42,10 @@ from app import storage  # noqa: E402
 from app import canvases as _canvases  # noqa: E402
 from app import library as _library  # noqa: E402
 from app import tagged_svg as _tagged  # noqa: E402  (v0.7 editor tagging)
+from app import auth as _auth  # noqa: E402  (v0.8 user auth)
+from app import ownership as _ownership  # noqa: E402  (v0.8 per-user isolation)
+from app import demo_reset as _demo_reset  # noqa: E402  (v0.8 nightly demo wipe)
+from app import frames as _frames_mod  # noqa: E402  (moved up from further down)
 
 
 app = FastAPI(title="Drawing Language Editor", version=SPEC_VERSION)
@@ -61,6 +66,14 @@ def _init_storage() -> None:
     # legacy on-disk frames on first run.
     from app import frames as _frames_init
     _frames_init.init()
+    # v0.8: user auth + per-user ownership. Order matters:
+    #   1. auth.init() creates the users/sessions tables and seeds admin+demo.
+    #   2. ownership.apply() adds owner_id columns and backfills existing
+    #      rows to admin so historical data isn't orphaned.
+    #   3. demo_reset.start() launches the nightly wipe thread.
+    _auth.init()
+    _ownership.apply()
+    _demo_reset.start()
     # Sweep any pre-DB filesystem drawings into the DB, once.
     legacy = Path(__file__).resolve().parent.parent / "user_drawings"
     imported = storage.import_legacy_files(legacy)
@@ -105,9 +118,318 @@ def health() -> dict:
         "status": "ok",
         "spec_version": SPEC_VERSION,
         "drawlang_version": pkg_version,
-        "semantic_layer": "0.7.8",  # v0.7.8 Canvas zoom (CSS transform on #svg-host; grammar frozen at v0.6)
+        "semantic_layer": "0.8.0",  # v0.8.0 user auth + per-user isolation + demo reset (grammar frozen at v0.6)
         "git_sha": _GIT_SHA_CACHE,
     }
+
+
+# ---------------------------------------------------------------------------
+# v0.8 auth middleware & endpoints
+# ---------------------------------------------------------------------------
+
+# Paths that never require auth (login/register/logout pages + auth API +
+# static + health). Everything else requires an active session.
+_PUBLIC_PATHS = {
+    "/health",
+    "/login",
+    "/register",
+    "/logout",
+    "/favicon.ico",
+    "/robots.txt",
+}
+_PUBLIC_PREFIXES = (
+    "/static/",
+    "/api/auth/",
+)
+
+
+def _is_public_path(path: str) -> bool:
+    if path in _PUBLIC_PATHS:
+        return True
+    for prefix in _PUBLIC_PREFIXES:
+        if path.startswith(prefix):
+            return True
+    return False
+
+
+def _test_bypass_user() -> dict:
+    """Synthetic admin used only when DRAWLANG_TEST_BYPASS_AUTH=1.
+
+    Ensures the pre-auth test suite still exercises endpoints as an
+    authenticated admin without every test rewiring cookies. Never active
+    in production because the env var is set only by tests/conftest.py.
+    """
+    return {
+        "id": _admin_user_id() or 0,
+        "email": _auth.ADMIN_EMAIL,
+        "display_name": "Admin (test bypass)",
+        "role": "admin",
+        "status": "active",
+        "reason": "",
+        "password_hash": "",
+    }
+
+
+@app.middleware("http")
+async def _auth_middleware(request: Request, call_next):
+    """Gate every non-public route behind an active session cookie.
+
+    HTML page requests get a 302 to /login when unauthenticated.
+    API requests get a 401 JSON response. Static + auth + health always
+    pass through.
+    """
+    path = request.url.path
+    if _is_public_path(path):
+        return await call_next(request)
+
+    if os.environ.get("DRAWLANG_TEST_BYPASS_AUTH") == "1":
+        request.state.user = _test_bypass_user()
+        return await call_next(request)
+
+    user = _auth.current_user(request)
+    if user is None or not _auth.is_active(user):
+        if path.startswith("/api/"):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "authentication required"},
+            )
+        # Best-effort redirect for browser navigation.
+        return RedirectResponse(
+            url=f"/login?next={path}", status_code=302,
+        )
+    request.state.user = user
+    return await call_next(request)
+
+
+def _require_user(request: Request) -> dict:
+    """Fetch the user attached by the middleware. Returns 401 if missing."""
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise HTTPException(status_code=401, detail="authentication required")
+    return user
+
+
+def _require_admin(request: Request) -> dict:
+    user = _require_user(request)
+    if not _auth.is_admin(user):
+        raise HTTPException(status_code=403, detail="admin only")
+    return user
+
+
+def _admin_user_id() -> int | None:
+    """Look up the seeded admin user id; used to expose shared frames/library."""
+    admin_email = _auth.ADMIN_EMAIL
+    row = _auth.get_user_by_email(admin_email)
+    if row is None:
+        return None
+    return int(row["id"])
+
+
+def _current_user_id(request: Request) -> int:
+    """Return the id of the authenticated user, or raise 401."""
+    user = _require_user(request)
+    return int(user["id"])
+
+
+def _authorize_canvas(id_or_slug, user: dict) -> None:
+    """Raise 404 if the canvas isn't owned by the user.
+
+    Deliberately returns 404 rather than 403 for other users' canvases so
+    we don't leak existence to a probing client. Admins can access every
+    canvas. Unowned rows (legacy pre-migration data) are treated as
+    admin-shared and are readable/writable by any authenticated user —
+    the migration back-fills owner_id, so this branch is only relevant
+    during the transition and for tests running against fresh temp DBs.
+    """
+    owner_id = _canvases.get_canvas_owner(id_or_slug)
+    if owner_id is None:
+        # Row missing OR unowned. Distinguish by asking storage directly.
+        row = _canvases.get_canvas(id_or_slug)
+        if row is None:
+            raise HTTPException(status_code=404, detail="canvas not found")
+        return  # unowned legacy row — accessible
+    if int(user["id"]) == owner_id or _auth.is_admin(user):
+        return
+    raise HTTPException(status_code=404, detail="canvas not found")
+
+
+def _authorize_frame_write(frame_id: str, user: dict) -> None:
+    """Frames may be admin-owned (shared) or user-owned.
+
+    Read access is checked by the list/get returning shared rows. Write
+    access requires either ownership or admin.
+    """
+    owner_id = _frames_mod.get_frame_owner(frame_id)
+    if owner_id is None:
+        # Row doesn't exist, or unowned (legacy). Admin can edit; others can't.
+        if _auth.is_admin(user):
+            return
+        raise HTTPException(status_code=403, detail="cannot edit shared frame")
+    if int(user["id"]) == owner_id or _auth.is_admin(user):
+        return
+    raise HTTPException(status_code=403, detail="you do not own this frame")
+
+
+def _authorize_library_write(id_or_slug, user: dict) -> None:
+    owner_id = _library.get_item_owner(id_or_slug)
+    if owner_id is None:
+        if _auth.is_admin(user):
+            return
+        raise HTTPException(status_code=403, detail="cannot edit shared library item")
+    if int(user["id"]) == owner_id or _auth.is_admin(user):
+        return
+    raise HTTPException(status_code=403, detail="you do not own this library item")
+
+
+# --- Auth endpoints -------------------------------------------------------
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    display_name: str
+    password: str
+    reason: str = ""
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=_auth.COOKIE_NAME,
+        value=token,
+        max_age=_auth.SESSION_TTL_SECONDS,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+
+
+def _clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(_auth.COOKIE_NAME, path="/")
+
+
+@app.post("/api/auth/login")
+def api_auth_login(req: LoginRequest, response: Response) -> dict:
+    user = _auth.authenticate(req.email, req.password)
+    if user is None:
+        raise HTTPException(status_code=401, detail="invalid credentials")
+    if not _auth.is_active(user):
+        raise HTTPException(
+            status_code=403,
+            detail=f"account is {user['status']}; contact an administrator",
+        )
+    token = _auth.create_session(int(user["id"]))
+    _set_session_cookie(response, token)
+    return {"ok": True, "user": _auth._public_user(user)}
+
+
+@app.post("/api/auth/register")
+def api_auth_register(req: RegisterRequest) -> dict:
+    try:
+        user = _auth.register(
+            email=req.email,
+            display_name=req.display_name,
+            password=req.password,
+            reason=req.reason,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "user": _auth._public_user(user)}
+
+
+@app.post("/api/auth/logout")
+def api_auth_logout(request: Request, response: Response) -> dict:
+    token = _auth._extract_token(request)
+    if token:
+        _auth.destroy_session(token)
+    _clear_session_cookie(response)
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def api_auth_me(request: Request) -> dict:
+    user = _auth.current_user(request)
+    if user is None:
+        return {"ok": False, "user": None}
+    return {"ok": True, "user": _auth._public_user(user)}
+
+
+# --- Admin endpoints ------------------------------------------------------
+
+@app.get("/api/admin/users")
+def api_admin_users(request: Request, status: str | None = None) -> dict:
+    _require_admin(request)
+    if status == "pending":
+        users = _auth.list_pending()
+    else:
+        users = _auth.list_all_users()
+    return {"users": [_auth._public_user(u) for u in users]}
+
+
+@app.get("/api/admin/users/pending")
+def api_admin_users_pending(request: Request) -> dict:
+    _require_admin(request)
+    users = _auth.list_pending()
+    return {"users": [_auth._public_user(u) for u in users]}
+
+
+@app.post("/api/admin/users/{user_id}/approve")
+def api_admin_users_approve(user_id: int, request: Request) -> dict:
+    _require_admin(request)
+    _auth.approve_user(user_id)
+    return {"ok": True}
+
+
+@app.post("/api/admin/users/{user_id}/disable")
+def api_admin_users_disable(user_id: int, request: Request) -> dict:
+    _require_admin(request)
+    _auth.disable_user(user_id)
+    return {"ok": True}
+
+
+@app.post("/api/admin/users/{user_id}/delete")
+def api_admin_users_delete_post(user_id: int, request: Request) -> dict:
+    _require_admin(request)
+    _auth.delete_user(user_id)
+    return {"ok": True}
+
+
+@app.delete("/api/admin/users/{user_id}")
+def api_admin_users_delete(user_id: int, request: Request) -> dict:
+    _require_admin(request)
+    _auth.delete_user(user_id)
+    return {"ok": True}
+
+
+# --- Public HTML pages ----------------------------------------------------
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page() -> HTMLResponse:
+    return HTMLResponse((STATIC_DIR / "login.html").read_text(encoding="utf-8"))
+
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page() -> HTMLResponse:
+    return HTMLResponse((STATIC_DIR / "register.html").read_text(encoding="utf-8"))
+
+
+@app.get("/logout")
+def logout_page(request: Request) -> RedirectResponse:
+    token = _auth._extract_token(request)
+    if token:
+        _auth.destroy_session(token)
+    resp = RedirectResponse(url="/login", status_code=302)
+    _clear_session_cookie(resp)
+    return resp
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+def admin_users_page(request: Request) -> HTMLResponse:
+    _require_admin(request)
+    return HTMLResponse((STATIC_DIR / "admin-users.html").read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -268,14 +590,18 @@ class SaveRequest(BaseModel):
 
 
 @app.post("/save")
-def save_drawing(req: SaveRequest) -> JSONResponse:
+def save_drawing(req: SaveRequest, request: Request) -> JSONResponse:
     """
     Persist an edited program as a database row.
 
     Name is slugified into a stable id; re-saving the same name updates
     the existing row. The library templates remain read-only; user rows
     live in the `drawings` table.
+
+    v0.8: requires an authenticated user (legacy endpoint kept for
+    backwards compatibility — new clients use ``/api/canvases``).
     """
+    _require_user(request)
     result = storage.save_drawing(
         name=req.name,
         program=req.program,
@@ -285,13 +611,19 @@ def save_drawing(req: SaveRequest) -> JSONResponse:
 
 
 @app.get("/drawings")
-def list_drawings() -> JSONResponse:
-    """List all saved user drawings from the database."""
+def list_drawings(request: Request) -> JSONResponse:
+    """List all saved user drawings from the database.
+
+    v0.8: requires an authenticated user.
+    """
+    _require_user(request)
     return JSONResponse(storage.list_drawings())
 
 
 @app.delete("/drawings/{slug}")
-def delete_drawing(slug: str) -> JSONResponse:
+def delete_drawing(slug: str, request: Request) -> JSONResponse:
+    """v0.8: requires an authenticated user."""
+    _require_user(request)
     deleted = storage.delete_drawing(slug)
     return JSONResponse({"ok": deleted, "slug": slug})
 
@@ -575,13 +907,19 @@ REFERENCE = {
 # ---------------------------------------------------------------------------
 # Frame templates API — editable legacy title-block frames
 # ---------------------------------------------------------------------------
-from app import frames as _frames_mod  # noqa: E402
+# (imported near the top: from app import frames as _frames_mod)
 
 
 @app.get("/api/frames")
-def api_list_frames() -> JSONResponse:
-    """List available frame templates."""
-    return JSONResponse({"frames": _frames_mod.list_frames()})
+def api_list_frames(request: Request) -> JSONResponse:
+    """List available frame templates (own + admin-shared + unowned)."""
+    user = _require_user(request)
+    return JSONResponse({
+        "frames": _frames_mod.list_frames(
+            owner_id=int(user["id"]),
+            admin_id=_admin_user_id(),
+        )
+    })
 
 
 @app.get("/api/frames/{frame_id}")
@@ -701,8 +1039,9 @@ class FramePatchRequest(BaseModel):
 
 
 @app.post("/api/frames")
-def api_frame_create(req: FrameCreateRequest) -> JSONResponse:
+def api_frame_create(req: FrameCreateRequest, request: Request) -> JSONResponse:
     """Create a new frame. Returns the created frame or 409 on id clash."""
+    user = _require_user(request)
     try:
         data = _frames_mod.create_frame(
             frame_id=req.id,
@@ -710,6 +1049,7 @@ def api_frame_create(req: FrameCreateRequest) -> JSONResponse:
             drawlang=req.drawlang,
             fields=req.fields,
             source=req.source,
+            owner_id=int(user["id"]),
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -717,8 +1057,10 @@ def api_frame_create(req: FrameCreateRequest) -> JSONResponse:
 
 
 @app.patch("/api/frames/{frame_id}")
-def api_frame_update(frame_id: str, req: FramePatchRequest) -> JSONResponse:
+def api_frame_update(frame_id: str, req: FramePatchRequest, request: Request) -> JSONResponse:
     """Patch a frame's name/drawlang/fields/source."""
+    user = _require_user(request)
+    _authorize_frame_write(frame_id, user)
     try:
         data = _frames_mod.update_frame(
             frame_id,
@@ -733,8 +1075,10 @@ def api_frame_update(frame_id: str, req: FramePatchRequest) -> JSONResponse:
 
 
 @app.delete("/api/frames/{frame_id}")
-def api_frame_delete(frame_id: str) -> JSONResponse:
+def api_frame_delete(frame_id: str, request: Request) -> JSONResponse:
     """Delete a frame. Canvases referencing it keep their frame_id."""
+    user = _require_user(request)
+    _authorize_frame_write(frame_id, user)
     ok = _frames_mod.delete_frame(frame_id)
     if not ok:
         raise HTTPException(status_code=404, detail=f"frame {frame_id!r} not found")
@@ -761,18 +1105,26 @@ class CanvasPatchRequest(BaseModel):
 
 
 @app.get("/api/canvases")
-def api_canvases_list() -> dict:
-    """List all canvases with statement counts."""
-    return {"canvases": _canvases.list_canvases()}
+def api_canvases_list(request: Request) -> dict:
+    """List the current user's canvases with statement counts.
+
+    Admins see every canvas (including unowned legacy rows). Regular
+    users see only their own.
+    """
+    user = _require_user(request)
+    if _auth.is_admin(user):
+        return {"canvases": _canvases.list_canvases(owner_id=None)}
+    return {"canvases": _canvases.list_canvases(owner_id=int(user["id"]))}
 
 
 @app.post("/api/canvases")
-def api_canvases_create(req: CanvasCreateRequest) -> dict:
+def api_canvases_create(req: CanvasCreateRequest, request: Request) -> dict:
     """
     Create a canvas. `frame_id` is stored as-is; the frame is composed at
     render time (see get_canvas_program). The canvas body starts empty
     unless the caller supplies `program`.
     """
+    user = _require_user(request)
     program = req.program or ""
     # If a frame is specified, verify it exists so we fail fast on bad ids.
     if req.frame_id:
@@ -789,6 +1141,7 @@ def api_canvases_create(req: CanvasCreateRequest) -> dict:
             program=program,
             slug=req.slug,
             field_values=req.field_values,
+            owner_id=int(user["id"]),
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -796,8 +1149,10 @@ def api_canvases_create(req: CanvasCreateRequest) -> dict:
 
 
 @app.get("/api/canvases/{id_or_slug}")
-def api_canvases_get(id_or_slug: str) -> dict:
+def api_canvases_get(id_or_slug: str, request: Request) -> dict:
     """Return one canvas + all its statements in seq order."""
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     data = _canvases.get_canvas(id_or_slug)
     if data is None:
         raise HTTPException(status_code=404, detail="canvas not found")
@@ -805,8 +1160,10 @@ def api_canvases_get(id_or_slug: str) -> dict:
 
 
 @app.get("/api/canvases/{id_or_slug}/program", response_class=Response)
-def api_canvases_program(id_or_slug: str) -> Response:
+def api_canvases_program(id_or_slug: str, request: Request) -> Response:
     """Reconstruct the drawlang program by joining statements in order."""
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     program = _canvases.get_canvas_program(id_or_slug)
     if program is None:
         raise HTTPException(status_code=404, detail="canvas not found")
@@ -814,7 +1171,7 @@ def api_canvases_program(id_or_slug: str) -> Response:
 
 
 @app.post("/api/canvases/{id_or_slug}/render")
-def api_canvases_render(id_or_slug: str, tagged: bool = False) -> dict:
+def api_canvases_render(id_or_slug: str, request: Request, tagged: bool = False) -> dict:
     """Render a canvas by joining its statements and running the interpreter.
 
     When ``tagged=true``, each canvas statement's SVG output is wrapped in
@@ -824,6 +1181,8 @@ def api_canvases_render(id_or_slug: str, tagged: bool = False) -> dict:
     editable rows in the canvas). The language layer is unchanged; the
     wrapping happens in editor.app.tagged_svg.
     """
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     data = _canvases.get_canvas(id_or_slug)
     if data is None:
         raise HTTPException(status_code=404, detail="canvas not found")
@@ -879,8 +1238,10 @@ def _count_frame_statements(canvas_data: dict) -> int:
 
 
 @app.delete("/api/canvases/{id_or_slug}")
-def api_canvases_delete(id_or_slug: str) -> dict:
+def api_canvases_delete(id_or_slug: str, request: Request) -> dict:
     """Delete a canvas + all its statements."""
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     ok = _canvases.delete_canvas(id_or_slug)
     if not ok:
         raise HTTPException(status_code=404, detail="canvas not found")
@@ -888,7 +1249,7 @@ def api_canvases_delete(id_or_slug: str) -> dict:
 
 
 @app.patch("/api/canvases/{id_or_slug}")
-def api_canvases_patch(id_or_slug: str, req: CanvasPatchRequest) -> dict:
+def api_canvases_patch(id_or_slug: str, req: CanvasPatchRequest, request: Request) -> dict:
     """Rename a canvas, change its slug, change its frame, or update its
     frame field_values.
 
@@ -896,6 +1257,8 @@ def api_canvases_patch(id_or_slug: str, req: CanvasPatchRequest) -> dict:
     request body are updated. To clear the frame, send frame_id as an
     empty string. field_values passes straight to the canvas row.
     """
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     payload = req.dict(exclude_unset=True)
     try:
         data = _canvases.update_canvas(id_or_slug, **payload)
@@ -951,8 +1314,10 @@ class ReplaceProgramRequest(BaseModel):
 
 
 @app.post("/api/canvases/{id_or_slug}/statements")
-def api_statements_append(id_or_slug: str, req: StatementAppendRequest) -> dict:
+def api_statements_append(id_or_slug: str, req: StatementAppendRequest, request: Request) -> dict:
     """Append statements (list) or raw program text to a canvas."""
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     try:
         if req.program is not None:
             inserted = _canvases.append_program(id_or_slug, req.program)
@@ -970,7 +1335,7 @@ def api_statements_append(id_or_slug: str, req: StatementAppendRequest) -> dict:
 
 @app.patch("/api/canvases/{id_or_slug}/statements/{statement_id}")
 def api_statement_patch(
-    id_or_slug: str, statement_id: int, req: StatementPatchRequest
+    id_or_slug: str, statement_id: int, req: StatementPatchRequest, request: Request
 ) -> dict:
     """Update one statement's opcode/args/group_id/meaning_tag.
 
@@ -978,6 +1343,8 @@ def api_statement_patch(
     value; a field that is missing preserves it. This matters most for
     `meaning_tag` — clients need a way to remove a tag.
     """
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     # Pydantic v1: exclude_unset keeps the None-vs-missing distinction.
     patch = req.dict(exclude_unset=True)
     updated = _canvases.update_statement(id_or_slug, statement_id, patch)
@@ -987,7 +1354,9 @@ def api_statement_patch(
 
 
 @app.delete("/api/canvases/{id_or_slug}/statements/{statement_id}")
-def api_statement_delete(id_or_slug: str, statement_id: int) -> dict:
+def api_statement_delete(id_or_slug: str, statement_id: int, request: Request) -> dict:
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     ok = _canvases.delete_statement(id_or_slug, statement_id)
     if not ok:
         raise HTTPException(status_code=404, detail="canvas or statement not found")
@@ -995,7 +1364,9 @@ def api_statement_delete(id_or_slug: str, statement_id: int) -> dict:
 
 
 @app.post("/api/canvases/{id_or_slug}/statements/reorder")
-def api_statements_reorder(id_or_slug: str, req: ReorderRequest) -> dict:
+def api_statements_reorder(id_or_slug: str, req: ReorderRequest, request: Request) -> dict:
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     ok = _canvases.reorder_statements(id_or_slug, req.order)
     if not ok:
         raise HTTPException(status_code=404, detail="canvas not found")
@@ -1003,13 +1374,15 @@ def api_statements_reorder(id_or_slug: str, req: ReorderRequest) -> dict:
 
 
 @app.post("/api/canvases/{id_or_slug}/statements/insert")
-def api_statement_insert(id_or_slug: str, req: StatementInsertRequest) -> dict:
+def api_statement_insert(id_or_slug: str, req: StatementInsertRequest, request: Request) -> dict:
     """v0.7 text-editor: insert a statement at an arbitrary seq position.
 
     Existing rows at or past ``seq`` are pushed down by one. Used by the
     statements panel to implement Enter-to-add-line-below and
     Cmd/Ctrl+Enter-to-add-line-above without falling back to reorder-then-append.
     """
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     inserted = _canvases.insert_statement_at(
         id_or_slug,
         seq=req.seq,
@@ -1024,7 +1397,9 @@ def api_statement_insert(id_or_slug: str, req: StatementInsertRequest) -> dict:
 
 
 @app.put("/api/canvases/{id_or_slug}/program")
-def api_replace_program(id_or_slug: str, req: ReplaceProgramRequest) -> dict:
+def api_replace_program(id_or_slug: str, req: ReplaceProgramRequest, request: Request) -> dict:
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     data = _canvases.replace_program(id_or_slug, req.program)
     if data is None:
         raise HTTPException(status_code=404, detail="canvas not found")
@@ -1036,8 +1411,10 @@ def api_replace_program(id_or_slug: str, req: ReplaceProgramRequest) -> dict:
 # ---------------------------------------------------------------------------
 
 @app.get("/api/canvases/{id_or_slug}/history")
-def api_history(id_or_slug: str) -> dict:
+def api_history(id_or_slug: str, request: Request) -> dict:
     """Return {undo_depth, redo_depth} so the UI can enable/disable buttons."""
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     try:
         return {"ok": True, **_canvases.history_depths(id_or_slug)}
     except KeyError:
@@ -1045,7 +1422,9 @@ def api_history(id_or_slug: str) -> dict:
 
 
 @app.post("/api/canvases/{id_or_slug}/undo")
-def api_undo(id_or_slug: str) -> dict:
+def api_undo(id_or_slug: str, request: Request) -> dict:
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     data = _canvases.undo(id_or_slug)
     if data is None:
         # Distinguish empty stack (200 + no-op) from missing canvas (404).
@@ -1058,10 +1437,15 @@ def api_undo(id_or_slug: str) -> dict:
 
 
 @app.post("/api/canvases/{id_or_slug}/duplicate")
-def api_duplicate(id_or_slug: str, req: CanvasDuplicateRequest) -> dict:
+def api_duplicate(id_or_slug: str, req: CanvasDuplicateRequest, request: Request) -> dict:
     """v0.7 file management: deep-copy this canvas to a new slug."""
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     try:
-        data = _canvases.duplicate_canvas(id_or_slug, new_slug=req.slug, new_name=req.name)
+        data = _canvases.duplicate_canvas(
+            id_or_slug, new_slug=req.slug, new_name=req.name,
+            new_owner_id=int(user["id"]),
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail="canvas not found")
     except ValueError as e:
@@ -1070,7 +1454,9 @@ def api_duplicate(id_or_slug: str, req: CanvasDuplicateRequest) -> dict:
 
 
 @app.post("/api/canvases/{id_or_slug}/redo")
-def api_redo(id_or_slug: str) -> dict:
+def api_redo(id_or_slug: str, request: Request) -> dict:
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     data = _canvases.redo(id_or_slug)
     if data is None:
         try:
@@ -1087,20 +1473,24 @@ def api_redo(id_or_slug: str) -> dict:
 
 
 @app.get("/api/canvases/{id_or_slug}/meaning-index")
-def api_meaning_index(id_or_slug: str) -> dict:
+def api_meaning_index(id_or_slug: str, request: Request) -> dict:
     """List distinct meaning tags on a canvas with statement counts."""
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     if _canvases.get_canvas(id_or_slug) is None:
         raise HTTPException(status_code=404, detail="canvas not found")
     return {"index": _canvases.list_meaning_index(id_or_slug)}
 
 
 @app.get("/api/canvases/{id_or_slug}/meaning/{meaning_tag:path}")
-def api_meaning_get(id_or_slug: str, meaning_tag: str) -> dict:
+def api_meaning_get(id_or_slug: str, meaning_tag: str, request: Request) -> dict:
     """Return every statement on a canvas that carries the given meaning tag.
 
     The `:path` converter lets meaning tags contain slashes, so hierarchical
     tags like `motor/pump-101/status` are addressable directly by URL.
     """
+    user = _require_user(request)
+    _authorize_canvas(id_or_slug, user)
     if _canvases.get_canvas(id_or_slug) is None:
         raise HTTPException(status_code=404, detail="canvas not found")
     return {
@@ -1140,17 +1530,26 @@ class LibraryDropRequest(BaseModel):
 
 
 @app.get("/api/library")
-def api_library_list(category: str | None = None) -> dict:
-    return {"items": _library.list_items(category=category)}
+def api_library_list(request: Request, category: str | None = None) -> dict:
+    user = _require_user(request)
+    return {
+        "items": _library.list_items(
+            category=category,
+            owner_id=int(user["id"]),
+            admin_id=_admin_user_id(),
+        )
+    }
 
 
 @app.post("/api/library")
-def api_library_create(req: LibraryCreateRequest) -> dict:
+def api_library_create(req: LibraryCreateRequest, request: Request) -> dict:
+    user = _require_user(request)
     try:
         item = _library.create_item(
             name=req.name, program=req.program, category=req.category,
             description=req.description, anchor_x=req.anchor_x,
             anchor_y=req.anchor_y, slug=req.slug,
+            owner_id=int(user["id"]),
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -1158,15 +1557,24 @@ def api_library_create(req: LibraryCreateRequest) -> dict:
 
 
 @app.get("/api/library/{id_or_slug}")
-def api_library_get(id_or_slug: str) -> dict:
+def api_library_get(id_or_slug: str, request: Request) -> dict:
+    user = _require_user(request)
     item = _library.get_item(id_or_slug)
     if item is None:
         raise HTTPException(status_code=404, detail="library item not found")
-    return item
+    # Enforce read visibility: owner + admin-shared + unowned only.
+    owner_id = item.get("owner_id")
+    admin_id = _admin_user_id()
+    if owner_id is None or owner_id == int(user["id"]) or owner_id == admin_id \
+            or _auth.is_admin(user):
+        return item
+    raise HTTPException(status_code=404, detail="library item not found")
 
 
 @app.patch("/api/library/{id_or_slug}")
-def api_library_patch(id_or_slug: str, req: LibraryPatchRequest) -> dict:
+def api_library_patch(id_or_slug: str, req: LibraryPatchRequest, request: Request) -> dict:
+    user = _require_user(request)
+    _authorize_library_write(id_or_slug, user)
     item = _library.update_item(id_or_slug, req.dict())
     if item is None:
         raise HTTPException(status_code=404, detail="library item not found")
@@ -1174,7 +1582,9 @@ def api_library_patch(id_or_slug: str, req: LibraryPatchRequest) -> dict:
 
 
 @app.delete("/api/library/{id_or_slug}")
-def api_library_delete(id_or_slug: str) -> dict:
+def api_library_delete(id_or_slug: str, request: Request) -> dict:
+    user = _require_user(request)
+    _authorize_library_write(id_or_slug, user)
     ok = _library.delete_item(id_or_slug)
     if not ok:
         raise HTTPException(status_code=404, detail="library item not found")
@@ -1183,9 +1593,11 @@ def api_library_delete(id_or_slug: str) -> dict:
 
 @app.post("/api/library/{id_or_slug}/drop/{canvas_slug}")
 def api_library_drop(
-    id_or_slug: str, canvas_slug: str, req: LibraryDropRequest
+    id_or_slug: str, canvas_slug: str, req: LibraryDropRequest, request: Request
 ) -> dict:
     """Drop a library item onto a canvas at (x,y). Appends statements."""
+    user = _require_user(request)
+    _authorize_canvas(canvas_slug, user)
     try:
         inserted = _library.drop_on_canvas(
             id_or_slug, canvas_slug, req.x, req.y, group_id=req.group_id
@@ -1236,19 +1648,21 @@ def api_nlp_selection(req: SelectionCommandRequest) -> dict:
 
 
 @app.post("/api/nlp/translate")
-def api_nlp_translate(req: NLPRequest) -> dict:
+def api_nlp_translate(req: NLPRequest, request: Request) -> dict:
     """Translate natural-language text into drawlang statements.
 
     If `canvas_id` is supplied, the translated statements are appended
     to that canvas and the inserted rows are returned. Otherwise the
     translated text is returned without side effects.
     """
+    user = _require_user(request)
     try:
         stmts = _nlp.translate_command(req.text)
     except _nlp.NLPError as e:
         raise HTTPException(status_code=400, detail=str(e))
     program = "\n".join(stmts)
     if req.canvas_id:
+        _authorize_canvas(req.canvas_id, user)
         try:
             inserted = _canvases.append_program(req.canvas_id, program)
         except KeyError:

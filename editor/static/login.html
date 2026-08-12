@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sign in — DrawLang Editor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { background: #f7f6f2; color: #28251d; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; margin: 0; }
+    .auth-wrap { max-width: 380px; margin: 8vh auto 0; padding: 32px 28px; background: #fff; border: 1px solid #d4d1ca; border-radius: 8px; }
+    .auth-wrap h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+    .auth-wrap p.sub { margin: 0 0 20px; color: #7a7974; font-size: 14px; }
+    label { display: block; font-size: 12px; color: #7a7974; margin: 12px 0 4px; }
+    input[type=text], input[type=email], input[type=password] {
+      width: 100%; padding: 8px 10px; border: 1px solid #d4d1ca; border-radius: 4px;
+      font-size: 14px; box-sizing: border-box; background: #fbfbf9; color: #28251d;
+    }
+    button.primary {
+      margin-top: 20px; width: 100%; padding: 10px 12px; border: 0; border-radius: 4px;
+      background: #01696f; color: #fbfbf9; font-size: 14px; font-weight: 500; cursor: pointer;
+    }
+    button.primary:hover { background: #0c4e54; }
+    .err { color: #a12c7b; font-size: 13px; margin-top: 12px; min-height: 18px; }
+    .demo { margin-top: 16px; padding: 12px; background: #f7f6f2; border: 1px dashed #d4d1ca; border-radius: 4px; font-size: 13px; color: #7a7974; }
+    .demo b { color: #28251d; }
+    .foot { margin-top: 20px; text-align: center; font-size: 13px; color: #7a7974; }
+    .foot a { color: #01696f; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="auth-wrap">
+    <h1>DrawLang Editor</h1>
+    <p class="sub">Sign in to your account</p>
+    <form id="loginForm">
+      <label for="email">Email or username</label>
+      <input type="text" id="email" name="email" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+      <button type="submit" class="primary">Sign in</button>
+      <div class="err" id="err"></div>
+    </form>
+    <div class="demo">
+      <b>Try the demo:</b> username <b>demo</b>, password <b>demo</b>.
+      Resets every night — draw freely.
+    </div>
+    <div class="foot">
+      No account? <a href="/register">Request access</a>
+    </div>
+  </div>
+  <script>
+    const form = document.getElementById('loginForm');
+    const err  = document.getElementById('err');
+    const nextUrl = new URLSearchParams(location.search).get('next') || '/canvas-editor';
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.textContent = '';
+      const body = { email: form.email.value.trim(), password: form.password.value };
+      try {
+        const r = await fetch('/api/auth/login', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          err.textContent = j.detail || 'Sign in failed';
+          return;
+        }
+        window.location.href = nextUrl;
+      } catch (ex) {
+        err.textContent = 'Network error: ' + ex.message;
+      }
+    });
+  </script>
+</body>
+</html>

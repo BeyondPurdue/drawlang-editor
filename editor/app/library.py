@@ -51,6 +51,12 @@ def _fmt(n: float) -> str:
 def init() -> None:
     with _lock:
         _conn().executescript(SCHEMA)
+    # v0.8 ownership column (idempotent).
+    try:
+        from . import ownership as _ownership
+        _ownership._apply_one("library_items")
+    except Exception:
+        pass
 
 
 def create_item(
@@ -61,6 +67,7 @@ def create_item(
     anchor_x: float = 0.0,
     anchor_y: float = 0.0,
     slug: str | None = None,
+    owner_id: int | None = None,
 ) -> dict:
     item_slug = slug or _storage.slugify(name)
     now = time.time()
@@ -74,9 +81,9 @@ def create_item(
         c.execute(
             "INSERT INTO library_items "
             "(slug, name, category, description, program, anchor_x, anchor_y, "
-            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (item_slug, name, category, description, program,
-             anchor_x, anchor_y, now, now),
+             anchor_x, anchor_y, owner_id, now, now),
         )
     return get_item(item_slug)  # type: ignore[return-value]
 
@@ -106,18 +113,35 @@ def get_item(id_or_slug: str | int) -> dict | None:
     }
 
 
-def list_items(category: str | None = None) -> list[dict]:
+def list_items(
+    category: str | None = None,
+    owner_id: int | None = None,
+    admin_id: int | None = None,
+) -> list[dict]:
+    """List library items.
+
+    v0.8: pass ``owner_id`` (and optionally ``admin_id`` for shared items)
+    to filter to owner + admin-shared items.
+    """
     with _lock:
         c = _conn()
+        clauses = []
+        params: list = []
         if category:
-            rows = c.execute(
-                "SELECT slug FROM library_items WHERE category = ? "
-                "ORDER BY name ASC", (category,)
-            ).fetchall()
-        else:
-            rows = c.execute(
-                "SELECT slug FROM library_items ORDER BY category, name ASC"
-            ).fetchall()
+            clauses.append("category = ?")
+            params.append(category)
+        if owner_id is not None:
+            if admin_id is not None and admin_id != owner_id:
+                clauses.append("(owner_id = ? OR owner_id = ? OR owner_id IS NULL)")
+                params.extend([owner_id, admin_id])
+            else:
+                clauses.append("(owner_id = ? OR owner_id IS NULL)")
+                params.append(owner_id)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = c.execute(
+            f"SELECT slug FROM library_items{where} ORDER BY category, name ASC",
+            params,
+        ).fetchall()
     return [get_item(r[0]) for r in rows if get_item(r[0]) is not None]  # type: ignore[misc]
 
 
@@ -151,6 +175,24 @@ def delete_item(id_or_slug: str | int) -> bool:
         c = _conn()
         c.execute("DELETE FROM library_items WHERE id = ?", (item["id"],))
     return True
+
+
+def get_item_owner(id_or_slug: str | int) -> int | None:
+    """Return owner_id of a library item, or None if absent or unowned."""
+    with _lock:
+        c = _conn()
+        if isinstance(id_or_slug, int) or (isinstance(id_or_slug, str) and id_or_slug.isdigit()):
+            row = c.execute(
+                "SELECT owner_id FROM library_items WHERE id = ?", (int(id_or_slug),)
+            ).fetchone()
+        else:
+            row = c.execute(
+                "SELECT owner_id FROM library_items WHERE slug = ?", (id_or_slug,)
+            ).fetchone()
+    if row is None:
+        return None
+    val = row[0]
+    return int(val) if val is not None else None
 
 
 # ---------------------------------------------------------------------------

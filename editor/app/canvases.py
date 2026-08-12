@@ -105,6 +105,10 @@ def init() -> None:
     Also applies any additive migrations (see `_MIGRATIONS`). We check for
     the column first rather than catching the ALTER error so that a bad
     migration doesn't get silently swallowed.
+
+    v0.8: also adds the ``owner_id`` column via ``ownership._apply_one``
+    so tests that init the domain module directly (without going through
+    main.py's startup) still get per-user ownership columns.
     """
     with _lock:
         c = _conn()
@@ -121,6 +125,12 @@ def init() -> None:
             if col_name not in _cols(table):
                 c.execute(ddl)
                 _cols_cache.pop(table, None)  # refresh next lookup
+    # v0.8 ownership column (idempotent).
+    try:
+        from . import ownership as _ownership
+        _ownership._apply_one("canvases")
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -201,11 +211,16 @@ def create_canvas(
     program: str = "",
     slug: str | None = None,
     field_values: dict | None = None,
+    owner_id: int | None = None,
 ) -> dict:
     """
     Create a new canvas. If `program` is given, parse it into statements
     and insert them in order. If `slug` collides, raise ValueError — the
     caller decides the resolution strategy.
+
+    v0.8: `owner_id` stamps the row's ownership. None is allowed for
+    legacy callers (tests, migrations); the row will be admin-owned via
+    the ownership backfill.
     """
     canvas_slug = slug or _slug(name)
     now = time.time()
@@ -222,9 +237,9 @@ def create_canvas(
         c.execute("BEGIN;")
         try:
             cur = c.execute(
-                "INSERT INTO canvases (slug, name, frame_id, field_values, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (canvas_slug, name, frame_id, fv_json, now, now),
+                "INSERT INTO canvases (slug, name, frame_id, field_values, owner_id, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (canvas_slug, name, frame_id, fv_json, owner_id, now, now),
             )
             canvas_id = cur.lastrowid
             if program:
@@ -245,11 +260,20 @@ def create_canvas(
     return get_canvas(canvas_slug) or {}  # type: ignore[return-value]
 
 
-def duplicate_canvas(id_or_slug: str | int, *, new_slug: str, new_name: str | None = None) -> dict:
+def duplicate_canvas(
+    id_or_slug: str | int,
+    *,
+    new_slug: str,
+    new_name: str | None = None,
+    new_owner_id: int | None = None,
+) -> dict:
     """Deep-copy a canvas (statements included) to a fresh slug.
 
     v0.7 file-management helper. History is NOT copied — the new canvas
     starts with an empty undo/redo stack.
+
+    v0.8: if new_owner_id is supplied, the copy is stamped with that
+    user id. Otherwise ownership is copied from the source.
 
     Raises KeyError if the source is missing, ValueError on slug collision.
     """
@@ -264,18 +288,30 @@ def duplicate_canvas(id_or_slug: str | int, *, new_slug: str, new_name: str | No
         program=program,
         frame_id=canvas.get("frame_id"),
         field_values=canvas.get("field_values"),
+        owner_id=new_owner_id if new_owner_id is not None else canvas.get("owner_id"),
     )
 
 
-def list_canvases() -> list[dict]:
-    """Return every canvas with its statement count."""
+def list_canvases(owner_id: int | None = None) -> list[dict]:
+    """Return every canvas with its statement count.
+
+    v0.8: pass owner_id to filter to that user's canvases.
+    """
     with _lock:
         c = _conn()
-        rows = c.execute(
-            "SELECT c.id, c.slug, c.name, c.frame_id, c.field_values, c.created_at, c.updated_at, "
-            "  (SELECT COUNT(*) FROM statements s WHERE s.canvas_id = c.id) AS n "
-            "FROM canvases c ORDER BY c.updated_at DESC"
-        ).fetchall()
+        if owner_id is None:
+            rows = c.execute(
+                "SELECT c.id, c.slug, c.name, c.frame_id, c.field_values, c.created_at, c.updated_at, "
+                "  (SELECT COUNT(*) FROM statements s WHERE s.canvas_id = c.id) AS n "
+                "FROM canvases c ORDER BY c.updated_at DESC"
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT c.id, c.slug, c.name, c.frame_id, c.field_values, c.created_at, c.updated_at, "
+                "  (SELECT COUNT(*) FROM statements s WHERE s.canvas_id = c.id) AS n "
+                "FROM canvases c WHERE c.owner_id = ? ORDER BY c.updated_at DESC",
+                (owner_id,),
+            ).fetchall()
     return [
         {
             "id": row[0],
@@ -289,6 +325,27 @@ def list_canvases() -> list[dict]:
         }
         for row in rows
     ]
+
+
+def get_canvas_owner(id_or_slug: str | int) -> int | None:
+    """Return the owner_id of a canvas, or None if canvas doesn't exist.
+
+    v0.8: used by API endpoints to authorize get/update/delete.
+    """
+    with _lock:
+        c = _conn()
+        if isinstance(id_or_slug, int) or (isinstance(id_or_slug, str) and id_or_slug.isdigit()):
+            row = c.execute(
+                "SELECT owner_id FROM canvases WHERE id = ?", (int(id_or_slug),)
+            ).fetchone()
+        else:
+            row = c.execute(
+                "SELECT owner_id FROM canvases WHERE slug = ?", (id_or_slug,)
+            ).fetchone()
+    if row is None:
+        return None
+    val = row[0] if not isinstance(row, sqlite3.Row) else row["owner_id"]
+    return int(val) if val is not None else None
 
 
 def _resolve_canvas_row(id_or_slug: str | int) -> tuple[int, str, str, str | None, str | None, float, float] | None:

@@ -72,10 +72,18 @@ def _conn() -> sqlite3.Connection:
 
 
 def init() -> None:
-    """Apply schema + seed from legacy on-disk frames on first run."""
+    """Apply schema + seed from legacy on-disk frames on first run.
+
+    v0.8: also adds the ``owner_id`` column via ``ownership._apply_one``.
+    """
     with _lock:
         _conn().executescript(SCHEMA)
     _seed_from_legacy_if_empty()
+    try:
+        from . import ownership as _ownership
+        _ownership._apply_one("frames")
+    except Exception:
+        pass
 
 
 def _seed_from_legacy_if_empty() -> None:
@@ -140,14 +148,35 @@ def _row_to_dict(row: tuple) -> dict:
 # Public API
 # ---------------------------------------------------------------------------
 
-def list_frames() -> list[dict]:
-    """Enumerate frames. Slim payload: id, name, source, field_count."""
+def list_frames(owner_id: int | None = None, admin_id: int | None = None) -> list[dict]:
+    """Enumerate frames. Slim payload: id, name, source, field_count.
+
+    v0.8: pass ``owner_id`` (and optionally ``admin_id`` for shared frames)
+    to filter to that user's frames + admin-owned system frames.
+    """
     with _lock:
-        rows = _conn().execute(
-            "SELECT id, name, source, drawlang, fields_json, "
-            "       created_at, updated_at "
-            "FROM frames ORDER BY name"
-        ).fetchall()
+        if owner_id is None:
+            rows = _conn().execute(
+                "SELECT id, name, source, drawlang, fields_json, "
+                "       created_at, updated_at "
+                "FROM frames ORDER BY name"
+            ).fetchall()
+        elif admin_id is not None and admin_id != owner_id:
+            rows = _conn().execute(
+                "SELECT id, name, source, drawlang, fields_json, "
+                "       created_at, updated_at "
+                "FROM frames WHERE owner_id = ? OR owner_id = ? OR owner_id IS NULL "
+                "ORDER BY name",
+                (owner_id, admin_id),
+            ).fetchall()
+        else:
+            rows = _conn().execute(
+                "SELECT id, name, source, drawlang, fields_json, "
+                "       created_at, updated_at "
+                "FROM frames WHERE owner_id = ? OR owner_id IS NULL "
+                "ORDER BY name",
+                (owner_id,),
+            ).fetchall()
     out = []
     for r in rows:
         d = _row_to_dict(r)
@@ -208,8 +237,12 @@ def create_frame(
     drawlang: str,
     fields: list[dict] | None = None,
     source: str = "",
+    owner_id: int | None = None,
 ) -> dict:
-    """Create a new frame. Raises ValueError on id collision."""
+    """Create a new frame. Raises ValueError on id collision.
+
+    v0.8: `owner_id` stamps the row's ownership.
+    """
     now = time.time()
     with _lock:
         c = _conn()
@@ -219,9 +252,9 @@ def create_frame(
             raise ValueError(f"frame id {frame_id!r} already exists")
         c.execute(
             "INSERT INTO frames (id, name, source, drawlang, fields_json, "
-            " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (frame_id, name, source, drawlang,
-             json.dumps(fields or []), now, now),
+             json.dumps(fields or []), owner_id, now, now),
         )
     return get_frame(frame_id)
 
@@ -262,6 +295,18 @@ def delete_frame(frame_id: str) -> bool:
         c = _conn()
         cur = c.execute("DELETE FROM frames WHERE id = ?", (frame_id,))
         return cur.rowcount > 0
+
+
+def get_frame_owner(frame_id: str) -> int | None:
+    """Return owner_id of a frame, or None if absent or unowned."""
+    with _lock:
+        row = _conn().execute(
+            "SELECT owner_id FROM frames WHERE id = ?", (frame_id,)
+        ).fetchone()
+    if row is None:
+        return None
+    val = row[0]
+    return int(val) if val is not None else None
 
 
 # ---------------------------------------------------------------------------
