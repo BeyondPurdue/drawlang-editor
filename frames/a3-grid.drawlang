@@ -401,15 +401,19 @@ ma,1134,114;
 tx,0,Type:;
 
 # Copyright notice (vertical, in the left border strip)
-tz,7;
-ma,30,230;
+# v3.1 fix: previously anchored at x=30..66, which spatially collided with
+# the row-label column at x=55 (row letters A..N). Re-anchored to x=17..45
+# so the 5 rotated lines sit entirely inside the x=14..55 gap, clear of the
+# row labels and the inner border.
+tz,6;
+ma,17,230;
 tx,90,The reproduction transmission or use of this document;
-ma,39,230;
+ma,24,230;
 tx,90,or its contents is not permitted without express written;
-ma,48,230;
+ma,31,230;
 tx,90,authority. Offenders will be liable for damages.;
-ma,57,230;
+ma,38,230;
 tx,90,All rights including rights created by patent grant or;
-ma,66,230;
+ma,45,230;
 tx,90,registration of a utility model or design are reserved.;
 
