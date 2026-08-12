@@ -129,8 +129,14 @@ def test_endpoint_does_not_mutate_canvas() -> None:
         assert "program" not in r.json()
 
 
-def test_health_reports_v077() -> None:
+def test_health_reports_v077_or_later() -> None:
+    # v0.7.7 shipped the selection-transform layer; later editor-only
+    # versions (e.g. v0.7.8 zoom) don't remove the API, so the test
+    # accepts any 0.7.x >= 0.7.7 semantic_layer string.
     with TestClient(app) as c:
         r = c.get("/health")
         assert r.status_code == 200
-        assert r.json()["semantic_layer"] == "0.7.7"
+        sl = r.json()["semantic_layer"]
+        parts = sl.split(".")
+        assert parts[0] == "0" and parts[1] == "7"
+        assert int(parts[2]) >= 7

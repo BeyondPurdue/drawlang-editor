@@ -72,7 +72,11 @@
   .status.err { color: #a12c7b; }
   .status.ok { color: #437a22; }
   #svg-host svg { display: block; }
-  #svg-host { cursor: crosshair; }
+  #svg-host { cursor: crosshair; transform-origin: 0 0; }
+  /* v0.7.8 zoom UI */
+  .zoom-group { display: inline-flex; align-items: center; gap: 4px; }
+  .zoom-group #zoom-label { min-width: 44px; text-align: center; font-size: 12px; color: #28251d; padding: 6px 4px; }
+  .zoom-group button { padding: 6px 10px; }
   .coord-hud { position: fixed; bottom: 8px; left: 12px; background: rgba(0,0,0,.7); color: #fff; padding: 4px 8px; border-radius: 3px; font: 12px ui-monospace, monospace; z-index: 10; pointer-events: none; }
   /* v0.7.6.3 — uniform toolbar: every control renders like a regular
      header button/select (border, radius, padding, font). No chips, no
@@ -119,6 +123,13 @@
     <button id="export-dl" title="Download this canvas as .drawlang text">Export DrawLang</button>
     <button id="export-svg">Export SVG</button>
     <button id="export-pdf">Export PDF</button>
+    <span class="zoom-group" title="Zoom canvas">
+      <button id="zoom-out" title="Zoom out (−)">−</button>
+      <span id="zoom-label">100%</span>
+      <button id="zoom-in" title="Zoom in (+)">+</button>
+      <button id="zoom-reset" title="Reset zoom to 100% (0)">1:1</button>
+      <button id="zoom-fit" title="Fit to viewport (F)">Fit</button>
+    </span>
     <button id="render-btn" class="primary">Render</button>
   </header>
 

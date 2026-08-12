@@ -16,7 +16,45 @@ const state = {
   pendingDrop: null,
   svg: null,
   vbox: null,                // viewBox as [x,y,w,h]
+  zoom: 1,                   // v0.7.8 CSS scale factor on #svg-host
 };
+
+// v0.7.8 — canvas zoom (CSS transform on #svg-host).
+// The SVG viewBox stays in paper mm; only the on-screen rendering
+// scales. hookSvgEvents/svgPoint use getScreenCTM() which walks CSS
+// transforms, so hit-testing stays correct at any zoom.
+const ZOOM_MIN = 0.1;
+const ZOOM_MAX = 8;
+function applyZoom() {
+  const host = document.getElementById("svg-host");
+  if (!host) return;
+  const z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, state.zoom || 1));
+  state.zoom = z;
+  host.style.transform = z === 1 ? "" : `scale(${z})`;
+  const lbl = document.getElementById("zoom-label");
+  if (lbl) lbl.textContent = `${Math.round(z * 100)}%`;
+}
+function setZoom(z) { state.zoom = z; applyZoom(); }
+function zoomBy(mult) { setZoom((state.zoom || 1) * mult); }
+function zoomFit() {
+  const host = document.getElementById("svg-host");
+  const area = host && host.parentElement;
+  const svg = host && host.querySelector("svg");
+  if (!host || !area || !svg) return;
+  // Reset transform first so we measure the natural size.
+  const prev = host.style.transform;
+  host.style.transform = "";
+  const areaW = area.clientWidth - 40;     // matches .canvas-area padding
+  const areaH = area.clientHeight - 40;
+  const svgW = svg.getBoundingClientRect().width;
+  const svgH = svg.getBoundingClientRect().height;
+  host.style.transform = prev;
+  if (svgW <= 0 || svgH <= 0) return;
+  const fx = areaW / svgW;
+  const fy = areaH / svgH;
+  const factor = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.min(fx, fy)));
+  setZoom(factor);
+}
 
 async function api(url, opts = {}) {
   const res = await fetch(url, {
@@ -148,6 +186,8 @@ async function renderCanvas() {
   $("stmt-status").className = "status ok";
   // Re-apply any pre-existing selection to the newly rendered SVG.
   applySelectionHighlights();
+  // v0.7.8 — re-apply the user's zoom level.
+  applyZoom();
 }
 
 function hookSvgEvents(svg) {
@@ -1523,6 +1563,59 @@ $("save-symbol-btn").addEventListener("click", async () => {
 });
 
 $("render-btn").addEventListener("click", () => renderCanvas());
+
+// --------------------------------------------------------------------------
+// v0.7.8 — Canvas zoom
+// --------------------------------------------------------------------------
+$("zoom-in").addEventListener("click",   () => zoomBy(1.25));
+$("zoom-out").addEventListener("click",  () => zoomBy(1 / 1.25));
+$("zoom-reset").addEventListener("click", () => setZoom(1));
+$("zoom-fit").addEventListener("click",  () => zoomFit());
+
+// Ctrl/Cmd + mouse wheel = zoom around the cursor.
+(function _wireWheelZoom() {
+  const area = document.querySelector(".canvas-area");
+  if (!area) return;
+  area.addEventListener("wheel", (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    const host = document.getElementById("svg-host");
+    if (!host) return;
+    // Zoom-around-cursor: keep the pixel under the cursor fixed by
+    // adjusting scrollLeft/scrollTop after the scale change.
+    const before = state.zoom || 1;
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const after = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, before * factor));
+    if (after === before) return;
+    const rect = area.getBoundingClientRect();
+    // Position in scaled content space (px from host origin).
+    const cx = e.clientX - rect.left + area.scrollLeft;
+    const cy = e.clientY - rect.top  + area.scrollTop;
+    setZoom(after);
+    // Keep the same paper point under the cursor after scaling.
+    const ratio = after / before;
+    area.scrollLeft = cx * ratio - (e.clientX - rect.left);
+    area.scrollTop  = cy * ratio - (e.clientY - rect.top);
+  }, { passive: false });
+})();
+
+// Keyboard shortcuts: +/= zoom in, - zoom out, 0 = 100%, f = fit.
+// Ignored while typing into form controls.
+document.addEventListener("keydown", (e) => {
+  const tag = (e.target && e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select" ||
+      (e.target && e.target.isContentEditable)) return;
+  if (e.altKey) return;
+  // Ctrl/Cmd+0 is the browser default; support it too as "reset".
+  if ((e.ctrlKey || e.metaKey) && e.key === "0") {
+    e.preventDefault(); setZoom(1); return;
+  }
+  if (e.ctrlKey || e.metaKey) return;
+  if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomBy(1.25); }
+  else if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomBy(1 / 1.25); }
+  else if (e.key === "0") { e.preventDefault(); setZoom(1); }
+  else if (e.key === "f" || e.key === "F") { e.preventDefault(); zoomFit(); }
+});
 
 // --------------------------------------------------------------------------
 // Export buttons

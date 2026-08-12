@@ -105,7 +105,7 @@ def health() -> dict:
         "status": "ok",
         "spec_version": SPEC_VERSION,
         "drawlang_version": pkg_version,
-        "semantic_layer": "0.7.7",  # v0.7.7 Selection: mouse drag + scale + mic transform commands (grammar frozen at v0.6)
+        "semantic_layer": "0.7.8",  # v0.7.8 Canvas zoom (CSS transform on #svg-host; grammar frozen at v0.6)
         "git_sha": _GIT_SHA_CACHE,
     }
 
