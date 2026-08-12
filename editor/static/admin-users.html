@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>Users — DrawLang Editor Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/app.css">
   <style>
     body { background: #f7f6f2; color: #28251d; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; margin: 0; }
     .wrap { max-width: 1000px; margin: 24px auto; padding: 0 24px; }
@@ -55,106 +55,6 @@
     </section>
   </div>
   <div id="toast"></div>
-  <script>
-    const $ = (id) => document.getElementById(id);
-    const toast = (msg) => {
-      const t = $('toast');
-      t.textContent = msg;
-      t.classList.add('show');
-      setTimeout(() => t.classList.remove('show'), 1800);
-    };
-
-    async function api(method, path, body) {
-      const opts = { method, credentials: 'same-origin', headers: { 'content-type': 'application/json' } };
-      if (body) opts.body = JSON.stringify(body);
-      const r = await fetch(path, opts);
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        throw new Error(j.detail || (method + ' ' + path + ' failed'));
-      }
-      return r.json();
-    }
-
-    function row(u, isPending) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${u.email}</td>
-        <td>${u.display_name || ''}</td>
-        <td><span class="pill ${u.role}">${u.role}</span></td>
-        <td><span class="pill ${u.status}">${u.status}</span></td>
-        <td>${u.reason ? escapeHtml(u.reason) : ''}</td>
-        <td>${u.created_at ? u.created_at.substring(0,10) : ''}</td>
-        <td class="actions"></td>
-      `;
-      const actions = tr.querySelector('.actions');
-      if (u.status === 'pending') {
-        const b = document.createElement('button');
-        b.textContent = 'Approve';
-        b.className = 'approve';
-        b.onclick = () => act('approve', u);
-        actions.appendChild(b);
-      }
-      if (u.status !== 'disabled' && u.role !== 'admin' && u.role !== 'demo') {
-        const b = document.createElement('button');
-        b.textContent = 'Disable';
-        b.className = 'danger';
-        b.onclick = () => act('disable', u);
-        actions.appendChild(b);
-      }
-      if (u.role !== 'admin' && u.role !== 'demo') {
-        const b = document.createElement('button');
-        b.textContent = 'Delete';
-        b.className = 'danger';
-        b.onclick = () => {
-          if (confirm('Delete ' + u.email + ' and all their data?')) act('delete', u);
-        };
-        actions.appendChild(b);
-      }
-      return tr;
-    }
-
-    function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-
-    async function act(op, u) {
-      try {
-        await api('POST', `/api/admin/users/${u.id}/${op}`);
-        toast(op + ' ' + u.email);
-        load();
-      } catch (e) { toast(e.message); }
-    }
-
-    async function load() {
-      try {
-        const me = await api('GET', '/api/auth/me');
-        $('who').textContent = me.user.email + ' · admin';
-
-        const pending = await api('GET', '/api/admin/users?status=pending');
-        const all     = await api('GET', '/api/admin/users');
-
-        const renderTable = (into, users) => {
-          into.innerHTML = '';
-          if (!users.users.length) {
-            into.innerHTML = '<div class="empty">No users.</div>';
-            return;
-          }
-          const t = document.createElement('table');
-          t.innerHTML = `<thead><tr>
-            <th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>Reason</th><th>Created</th><th></th>
-          </tr></thead>`;
-          const tb = document.createElement('tbody');
-          users.users.forEach(u => tb.appendChild(row(u)));
-          t.appendChild(tb);
-          into.appendChild(t);
-        };
-
-        renderTable($('pending'), pending);
-        renderTable($('all'), all);
-      } catch (e) {
-        $('pending').innerHTML = '<div class="empty">Error: ' + escapeHtml(e.message) + '</div>';
-      }
-    }
-
-    load();
-  </script>
+  <script src="/static/admin-users.js"></script>
 </body>
 </html>
