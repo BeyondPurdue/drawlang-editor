@@ -57,8 +57,9 @@ async function loadCanvas(slug) {
   state.currentCanvas = slug;
   state.statements = data.statements;
   state.selectedIds = new Set();
-  const frameSel = $("frame-select");
-  if (frameSel) frameSel.value = data.canvas?.frame_id || "";
+  state.currentFrameId = data.canvas?.frame_id || "";
+  state.currentFieldValues = data.canvas?.field_values || {};
+  updateFrameChip();
   const renameEl = $("canvas-rename");
   if (renameEl) renameEl.value = data.canvas?.name || "";
   renderStatementList();
@@ -66,24 +67,54 @@ async function loadCanvas(slug) {
   if (typeof refreshHistoryButtons === "function") refreshHistoryButtons();
 }
 
+// Cache of all frames { id, name, ... } for the modals; populated on init and
+// after any frame binding change.
 async function loadFrameList() {
   try {
     const res = await fetch("/api/frames");
     if (!res.ok) return;
     const data = await res.json();
-    const frames = data.frames || data;
-    const sel = $("frame-select");
-    if (!sel) return;
-    // Preserve the placeholder option
-    sel.innerHTML = '<option value="">— none —</option>';
+    state.allFrames = data.frames || data;
+  } catch (e) {
+    console.error("frame list failed", e);
+    state.allFrames = state.allFrames || [];
+  }
+  populateFramePickers();
+  renderSidebarFramesList();
+}
+
+function populateFramePickers() {
+  const frames = state.allFrames || [];
+  for (const selId of ["nc-frame", "cf-frame"]) {
+    const sel = $(selId);
+    if (!sel) continue;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— No frame (blank) —</option>';
     for (const f of frames) {
       const opt = document.createElement("option");
       opt.value = f.id || f.slug;
       opt.textContent = f.name || f.id || f.slug;
       sel.appendChild(opt);
     }
-  } catch (e) {
-    console.error("frame list failed", e);
+    if (cur) sel.value = cur;
+  }
+}
+
+function updateFrameChip() {
+  const chip = $("frame-chip");
+  const btn = $("field-values-btn");
+  if (!chip) return;
+  const fid = state.currentFrameId || "";
+  if (!fid) {
+    chip.textContent = "— none —";
+    chip.classList.add("empty");
+    if (btn) btn.disabled = true;
+  } else {
+    const f = (state.allFrames || []).find(x => (x.id || x.slug) === fid);
+    chip.textContent = f ? (f.name || fid) : fid;
+    chip.title = `Frame: ${fid}`;
+    chip.classList.remove("empty");
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -1091,24 +1122,129 @@ $("canvas-rename").addEventListener("blur", commitRename);
 $("canvas-rename").addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); commitRename(); }
 });
+// v0.7.6: replace the two prompt() popups with a real modal that also lets
+// the user set frame field values up front. All calls go via the /api layer.
+let _ncCurrentFrameRaw = null;
+
+function openModal(id) {
+  const m = document.getElementById(id);
+  if (m) m.classList.add("open");
+}
+function closeModal(id) {
+  const m = document.getElementById(id);
+  if (m) m.classList.remove("open");
+}
+
+// Delegate closes for any element with data-close="<modal-id>".
+document.addEventListener("click", (e) => {
+  const closeId = e.target?.dataset?.close;
+  if (closeId) closeModal(closeId);
+});
+
 $("new-canvas-btn").addEventListener("click", async () => {
-  const name = prompt("Canvas name?");
-  if (!name) return;
-  const frame_id = prompt("Frame id (a3-grid, a3-empty, blank)?", "a3-grid");
-  const body = { name };
-  if (frame_id && frame_id !== "blank") body.frame_id = frame_id;
+  // Refresh cache so a frame just created in Frame Editor is visible.
+  await loadFrameList();
+  $("nc-name").value = "";
+  $("nc-frame").value = "";
+  $("nc-status").textContent = "";
+  $("nc-status").className = "status";
+  $("nc-fields").innerHTML =
+    '<div class="fv-empty">Select a frame to see its editable fields.</div>';
+  _ncCurrentFrameRaw = null;
+  openModal("new-canvas-modal");
+  setTimeout(() => $("nc-name").focus(), 50);
+});
+
+$("nc-frame").addEventListener("change", async () => {
+  const fid = $("nc-frame").value;
+  const box = $("nc-fields");
+  if (!fid) {
+    box.innerHTML =
+      '<div class="fv-empty">No frame selected — canvas will start blank.</div>';
+    _ncCurrentFrameRaw = null;
+    return;
+  }
+  box.innerHTML = '<div class="fv-empty">Loading fields…</div>';
   try {
+    const raw = await api(`/api/frames/${encodeURIComponent(fid)}/raw`);
+    _ncCurrentFrameRaw = raw;
+    renderFieldValueForm(box, raw.fields || [], {});
+  } catch (e) {
+    box.innerHTML = `<div class="fv-empty" style="color:#A12C7B">Failed to load fields: ${e.message}</div>`;
+    _ncCurrentFrameRaw = null;
+  }
+});
+
+$("nc-create-btn").addEventListener("click", async () => {
+  const name = $("nc-name").value.trim();
+  if (!name) {
+    $("nc-status").textContent = "Canvas name is required.";
+    $("nc-status").className = "status err";
+    return;
+  }
+  const frame_id = $("nc-frame").value || null;
+  const body = { name };
+  if (frame_id) body.frame_id = frame_id;
+  const values = readFieldValueForm($("nc-fields"));
+  if (Object.keys(values).length > 0) body.field_values = values;
+  try {
+    $("nc-status").textContent = "Creating…";
+    $("nc-status").className = "status";
     const res = await api("/api/canvases", {
       method: "POST",
       body: JSON.stringify(body),
     });
+    closeModal("new-canvas-modal");
     await refreshCanvasList();
     $("canvas-select").value = res.canvas.slug;
     await loadCanvas(res.canvas.slug);
   } catch (e) {
-    alert(e.message);
+    $("nc-status").textContent = e.message;
+    $("nc-status").className = "status err";
   }
 });
+
+function renderFieldValueForm(container, fields, values) {
+  // Renders one <label>/<input> row per editable field. Non-editable fields
+  // are informational only. `values` is the current dict of user overrides.
+  const editable = (fields || []).filter(f => f && f.editable !== false);
+  if (editable.length === 0) {
+    container.innerHTML =
+      '<div class="fv-empty">This frame has no editable fields.</div>';
+    return;
+  }
+  const rows = editable.map(f => {
+    const name = f.name;
+    const label = f.label || f.name;
+    const def = f.default != null ? String(f.default) : "";
+    const val = values && Object.prototype.hasOwnProperty.call(values, name)
+      ? String(values[name]) : "";
+    return `
+      <div class="fv-row">
+        <label title="{{${name}}}">${escapeHtml(label)}<span class="tok">{{${escapeHtml(name)}}}</span></label>
+        <input type="text" data-fv-name="${escapeHtml(name)}" data-fv-default="${escapeHtml(def)}"
+               value="${escapeHtml(val)}" placeholder="${escapeHtml(def) || 'default'}">
+      </div>`;
+  });
+  container.innerHTML = rows.join("");
+}
+
+function readFieldValueForm(container) {
+  // Only capture inputs with non-empty user text; empty means “use default”.
+  const out = {};
+  for (const inp of container.querySelectorAll('input[data-fv-name]')) {
+    const name = inp.dataset.fvName;
+    const v = (inp.value || "").trim();
+    if (v.length > 0) out[name] = v;
+  }
+  return out;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
 
 // v0.7 file management: Duplicate the current canvas (deep copy including
 // statements and frame binding) to a new slug via POST /duplicate.
@@ -1363,18 +1499,76 @@ $("export-pdf").addEventListener("click", async () => {
   }
 });
 
-// Frame picker: PATCH the canvas when the user changes the frame.
-$("frame-select").addEventListener("change", async (e) => {
+// v0.7.6: Frame binding is set through the “change…” link next to the chip.
+// The old inline <select id="frame-select"> is gone — all state.currentFrameId
+// changes go through the modal + PATCH /api/canvases/{slug}.
+$("change-frame-btn").addEventListener("click", async () => {
+  if (!state.currentCanvas) {
+    alert("Choose a canvas first.");
+    return;
+  }
+  await loadFrameList();
+  $("cf-frame").value = state.currentFrameId || "";
+  $("cf-status").textContent = "";
+  $("cf-status").className = "status";
+  openModal("change-frame-modal");
+});
+
+$("cf-apply-btn").addEventListener("click", async () => {
   if (!state.currentCanvas) return;
-  const frameId = e.target.value; // "" means clear
+  const frameId = $("cf-frame").value; // "" means clear
   try {
-    await api(`/api/canvases/${state.currentCanvas}`, {
+    $("cf-status").textContent = "Applying…";
+    $("cf-status").className = "status";
+    const res = await api(`/api/canvases/${state.currentCanvas}`, {
       method: "PATCH",
       body: JSON.stringify({ frame_id: frameId }),
     });
+    state.currentFrameId = res.canvas?.frame_id || "";
+    updateFrameChip();
+    closeModal("change-frame-modal");
     await renderCanvas();
   } catch (err) {
-    alert("Frame change failed: " + err.message);
+    $("cf-status").textContent = "Frame change failed: " + err.message;
+    $("cf-status").className = "status err";
+  }
+});
+
+// Field values: PATCH the canvas's field_values via API.
+$("field-values-btn").addEventListener("click", async () => {
+  if (!state.currentCanvas) return;
+  const fid = state.currentFrameId;
+  if (!fid) return;
+  $("fv-status").textContent = "";
+  $("fv-status").className = "status";
+  $("fv-frame-info").textContent = `Frame: ${fid}`;
+  $("fv-fields").innerHTML = '<div class="fv-empty">Loading fields…</div>';
+  openModal("fv-modal");
+  try {
+    const raw = await api(`/api/frames/${encodeURIComponent(fid)}/raw`);
+    renderFieldValueForm($("fv-fields"), raw.fields || [], state.currentFieldValues || {});
+  } catch (e) {
+    $("fv-fields").innerHTML =
+      `<div class="fv-empty" style="color:#A12C7B">Failed to load fields: ${escapeHtml(e.message)}</div>`;
+  }
+});
+
+$("fv-save-btn").addEventListener("click", async () => {
+  if (!state.currentCanvas) return;
+  const values = readFieldValueForm($("fv-fields"));
+  try {
+    $("fv-status").textContent = "Saving…";
+    $("fv-status").className = "status";
+    const res = await api(`/api/canvases/${state.currentCanvas}`, {
+      method: "PATCH",
+      body: JSON.stringify({ field_values: values }),
+    });
+    state.currentFieldValues = res.canvas?.field_values || values;
+    closeModal("fv-modal");
+    await renderCanvas();
+  } catch (err) {
+    $("fv-status").textContent = "Save failed: " + err.message;
+    $("fv-status").className = "status err";
   }
 });
 
@@ -1492,65 +1686,56 @@ function setSidebarTab(tab) {
   if (tab === "frames") refreshFramesSidebar();
 }
 
-// v0.7 Frames tab — list, create, delete, bind-to-canvas, and edit fields
-// and DrawLang source inline. Everything goes through /api/frames.
+// v0.7.6 Frames tab — read-only picker. Users bind a frame to the current
+// canvas by clicking Use. To create, delete, or edit frames they open the
+// dedicated Frame Editor.
 async function refreshFramesSidebar() {
+  await loadFrameList();
+}
+
+function renderSidebarFramesList() {
   const host = $("frames-list");
   if (!host) return;
-  const boundId = state.currentCanvas ? ($("frame-select").value || "") : "";
-  try {
-    const d = await api("/api/frames");
-    if (!d.frames || d.frames.length === 0) {
-      host.innerHTML = '<div class="status">No frames yet.</div>';
-      return;
-    }
-    host.innerHTML = d.frames.map((f) => {
-      const isBound = f.id === boundId;
-      return `
-      <div class="frame-item" data-frame-id="${escapeAttr(f.id)}">
-        <div class="prim-item frame-item-row">
-          <span class="prim-name">${escapeAttr(f.name || f.id)}${isBound ? " • in use" : ""}</span>
-          <span class="prim-meta">${f.field_count || 0} fields</span>
-          <button class="frame-use" data-use="${escapeAttr(f.id)}" title="Use this frame on the current canvas" style="font-size:10px;padding:1px 6px" ${isBound || !state.currentCanvas ? "disabled" : ""}>Use</button>
-          <button class="frame-fields-btn" data-fields="${escapeAttr(f.id)}" title="Edit frame inline" style="font-size:10px;padding:1px 4px">✎</button>
-          <button class="frame-del" data-del="${escapeAttr(f.id)}" title="Delete frame" style="font-size:10px;padding:1px 4px">✕</button>
+  const frames = state.allFrames || [];
+  if (frames.length === 0) {
+    host.innerHTML =
+      '<div class="status">No frames yet. Create one in the <a href="/frames-editor" target="_blank">Frame Editor</a>.</div>';
+    return;
+  }
+  const boundId = state.currentFrameId || "";
+  host.innerHTML = frames.map((f) => {
+    const id = f.id || f.slug;
+    const isBound = id === boundId;
+    const name = f.name || id;
+    const count = f.field_count != null ? f.field_count : 0;
+    return `
+      <div class="frame-item" data-frame-id="${escapeAttr(id)}">
+        <div class="prim-item frame-item-row" style="display:flex;gap:6px;align-items:center;padding:4px 6px">
+          <span class="prim-name" style="flex:1;overflow:hidden;text-overflow:ellipsis">${escapeAttr(name)}${isBound ? " • in use" : ""}</span>
+          <span class="prim-meta" style="font-size:11px;color:#7A7974">${count} field${count === 1 ? "" : "s"}</span>
+          <button class="frame-use" data-use="${escapeAttr(id)}" title="Use this frame on the current canvas" style="font-size:10px;padding:1px 6px" ${isBound || !state.currentCanvas ? "disabled" : ""}>Use</button>
         </div>
-        <div class="frame-fields-panel" data-fields-panel="${escapeAttr(f.id)}" style="display:none"></div>
       </div>`;
-    }).join("");
-    host.querySelectorAll("[data-use]").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const id = btn.dataset.use;
-        if (!state.currentCanvas) return;
-        await api(`/api/canvases/${state.currentCanvas}`, {
+  }).join("");
+  host.querySelectorAll("[data-use]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.use;
+      if (!state.currentCanvas) return;
+      try {
+        const res = await api(`/api/canvases/${state.currentCanvas}`, {
           method: "PATCH",
           body: JSON.stringify({ frame_id: id }),
         });
-        $("frame-select").value = id;
-        await loadCanvas(state.currentCanvas);
-        await refreshFramesSidebar();
-      });
+        state.currentFrameId = res.canvas?.frame_id || id;
+        updateFrameChip();
+        renderSidebarFramesList();
+        await renderCanvas();
+      } catch (err) {
+        alert("Frame change failed: " + err.message);
+      }
     });
-    host.querySelectorAll("[data-del]").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const id = btn.dataset.del;
-        if (!confirm(`Delete frame "${id}"? Canvases using it keep their frame_id.`)) return;
-        await api(`/api/frames/${encodeURIComponent(id)}`, { method: "DELETE" });
-        await refreshFramesSidebar();
-        await loadFrameList();
-      });
-    });
-    host.querySelectorAll("[data-fields]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        openFrameFieldsEditor(btn.dataset.fields);
-      });
-    });
-  } catch (e) {
-    host.innerHTML = `<div class="status err">${escapeAttr(e.message)}</div>`;
-  }
+  });
 }
 
 // v0.7: inline fields editor — shown in-line under the frame row so users
@@ -1646,7 +1831,7 @@ async function openFrameFieldsEditor(frameId) {
         await refreshFramesSidebar();
         await loadFrameList();
         // Re-render if this frame is currently bound to the canvas.
-        if (state.currentCanvas && $("frame-select").value === frameId) {
+        if (state.currentCanvas && state.currentFrameId === frameId) {
           await loadCanvas(state.currentCanvas);
         }
       } catch (e) {

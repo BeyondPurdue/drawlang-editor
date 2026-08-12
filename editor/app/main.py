@@ -105,7 +105,7 @@ def health() -> dict:
         "status": "ok",
         "spec_version": SPEC_VERSION,
         "drawlang_version": pkg_version,
-        "semantic_layer": "0.7.5",  # v0.7.5 tighter marquee (strict containment) + arrow-key nudge (language grammar frozen at v0.6)
+        "semantic_layer": "0.7.6",  # v0.7.6 Frames-as-editor + Canvas-from-frame flow (grammar frozen at v0.6)
         "git_sha": _GIT_SHA_CACHE,
     }
 
@@ -593,6 +593,66 @@ def api_get_frame(frame_id: str) -> JSONResponse:
         raise HTTPException(status_code=404, detail=f"frame {frame_id!r} not found")
 
 
+@app.get("/api/frames/{frame_id}/raw")
+def api_get_frame_raw(frame_id: str) -> JSONResponse:
+    """Return the frame's raw stored shape: unfiltered fields (all editable
+    flags), stored ``drawlang`` (no ``_apply_values`` rewrite), and metadata.
+
+    The Frame Editor uses this to load the true editable state; the plain
+    ``GET /api/frames/{id}`` returns only editable fields with resolved
+    ``value``s, which is the render-time shape (kept for backward compat).
+    """
+    with _frames_mod._lock:  # type: ignore[attr-defined]
+        row = _frames_mod._conn().execute(  # type: ignore[attr-defined]
+            "SELECT id, name, source, drawlang, fields_json, "
+            "       created_at, updated_at "
+            "FROM frames WHERE id = ?",
+            (frame_id,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"frame {frame_id!r} not found")
+    d = _frames_mod._row_to_dict(row)  # type: ignore[attr-defined]
+    return JSONResponse({
+        "id": d["id"],
+        "name": d["name"],
+        "source": d["source"],
+        "drawlang": d["drawlang"],
+        "fields": d["fields"],  # raw list, all fields, with default/line_index/editable
+    })
+
+
+@app.get("/api/frames/{frame_id}/tokens")
+def api_frame_tokens(frame_id: str) -> JSONResponse:
+    """Return `{{name}}` tokens found in the frame's drawlang.
+
+    Response:
+      - `tokens`: distinct tokens in first-seen order.
+      - `declared`: tokens already listed as fields.
+      - `undeclared`: tokens in drawlang not yet declared as fields.
+
+    The Fields tab uses `undeclared` to power its "scan drawlang for
+    undeclared tokens" button.
+    """
+    try:
+        frame = _frames_mod.get_frame(frame_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"frame {frame_id!r} not found")
+    prog = frame.get("drawlang") or ""
+    tokens = _canvases.extract_tokens(prog)
+    declared_names = {
+        f["name"] for f in (frame.get("fields") or [])
+        if isinstance(f, dict) and f.get("name")
+    }
+    declared = [t for t in tokens if t in declared_names]
+    undeclared = [t for t in tokens if t not in declared_names]
+    return JSONResponse({
+        "frame_id": frame_id,
+        "tokens": tokens,
+        "declared": declared,
+        "undeclared": undeclared,
+    })
+
+
 class FrameValues(BaseModel):
     values: dict[str, str]
 
@@ -690,12 +750,14 @@ class CanvasCreateRequest(BaseModel):
     frame_id: str | None = None
     program: str = ""
     slug: str | None = None
+    field_values: dict | None = None  # v0.7.6
 
 
 class CanvasPatchRequest(BaseModel):
     name: str | None = None
     slug: str | None = None
     frame_id: str | None = None
+    field_values: dict | None = None  # v0.7.6
 
 
 @app.get("/api/canvases")
@@ -707,14 +769,15 @@ def api_canvases_list() -> dict:
 @app.post("/api/canvases")
 def api_canvases_create(req: CanvasCreateRequest) -> dict:
     """
-    Create a canvas. If `frame_id` is given and `program` is empty, the
-    canvas is seeded from the frame's drawlang source.
+    Create a canvas. `frame_id` is stored as-is; the frame is composed at
+    render time (see get_canvas_program). The canvas body starts empty
+    unless the caller supplies `program`.
     """
     program = req.program or ""
-    if not program and req.frame_id:
+    # If a frame is specified, verify it exists so we fail fast on bad ids.
+    if req.frame_id:
         try:
-            frame = _frames_mod.get_frame(req.frame_id, values={})
-            program = frame["drawlang"]
+            _frames_mod.get_frame(req.frame_id, values={})
         except FileNotFoundError:
             raise HTTPException(
                 status_code=404, detail=f"frame {req.frame_id!r} not found"
@@ -725,6 +788,7 @@ def api_canvases_create(req: CanvasCreateRequest) -> dict:
             frame_id=req.frame_id,
             program=program,
             slug=req.slug,
+            field_values=req.field_values,
         )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -825,11 +889,12 @@ def api_canvases_delete(id_or_slug: str) -> dict:
 
 @app.patch("/api/canvases/{id_or_slug}")
 def api_canvases_patch(id_or_slug: str, req: CanvasPatchRequest) -> dict:
-    """Rename a canvas, change its slug, or change its frame.
+    """Rename a canvas, change its slug, change its frame, or update its
+    frame field_values.
 
     Omitted fields are preserved. Only fields explicitly present in the
     request body are updated. To clear the frame, send frame_id as an
-    empty string.
+    empty string. field_values passes straight to the canvas row.
     """
     payload = req.dict(exclude_unset=True)
     try:

@@ -16,43 +16,145 @@ header {
   display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;
 }
 header h1 { margin: 0; font-size: 18px; font-weight: 600; white-space: nowrap; }
-header .status { font-size: 13px; color: #7A7974; white-space: nowrap; }
-header select, header button {
+header .status { font-size: 13px; color: #7A7974; white-space: nowrap; margin-left: auto; }
+header button, header select {
   padding: 4px 10px; border: 1px solid #D4D1CA; border-radius: 4px;
   background: #fff; font: inherit; font-size: 13px; line-height: 1.3;
   cursor: pointer; white-space: nowrap;
 }
 header button.primary { background: #01696F; color: #fff; border-color: #01696F; }
+header button.primary:disabled { background: #7A7974; border-color: #7A7974; cursor: not-allowed; }
+header button.danger { color: #A12C7B; }
+
 .main { flex: 1; display: flex; overflow: hidden; }
+
 .sidebar {
-  width: 340px; background: #FBFBF9; border-right: 1px solid #D4D1CA;
-  overflow-y: auto; padding: 16px;
+  width: 260px; background: #FBFBF9; border-right: 1px solid #D4D1CA;
+  overflow-y: auto; display: flex; flex-direction: column;
 }
-.sidebar h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: #7A7974; text-transform: uppercase; letter-spacing: 0.5px; }
-.field { margin-bottom: 12px; }
-.field label { display: block; font-size: 12px; color: #7A7974; margin-bottom: 3px; }
-.field input {
+.sidebar h2 { margin: 0; padding: 12px 16px 8px; font-size: 12px; font-weight: 600;
+  color: #7A7974; text-transform: uppercase; letter-spacing: 0.5px; }
+.frame-list { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+.frame-item {
+  padding: 8px 10px; margin-bottom: 3px; border-radius: 4px; cursor: pointer;
+  font-size: 13px; user-select: none;
+}
+.frame-item:hover { background: #EDEBE4; }
+.frame-item.active { background: #01696F; color: #fff; }
+.frame-item.dirty::after { content: " •"; color: #DA7101; }
+.frame-item.active.dirty::after { color: #FFC553; }
+.sidebar-actions {
+  padding: 8px 12px; border-top: 1px solid #D4D1CA; background: #FBFBF9;
+  display: flex; gap: 6px;
+}
+.sidebar-actions button {
+  flex: 1; padding: 6px 8px; border: 1px solid #D4D1CA; border-radius: 4px;
+  background: #fff; font: inherit; font-size: 12px; cursor: pointer;
+}
+.sidebar-actions button.danger { color: #A12C7B; }
+
+.editor-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.tabs {
+  display: flex; gap: 0; padding: 0 16px; background: #FBFBF9;
+  border-bottom: 1px solid #D4D1CA;
+}
+.tab {
+  padding: 10px 16px; font-size: 13px; cursor: pointer; user-select: none;
+  border-bottom: 2px solid transparent; color: #7A7974;
+}
+.tab:hover { color: #28251D; }
+.tab.active { color: #01696F; border-bottom-color: #01696F; font-weight: 500; }
+
+.tab-content { flex: 1; overflow: auto; display: none; padding: 16px 20px; }
+.tab-content.active { display: block; }
+.tab-content.drawlang-tab, .tab-content.fields-tab { padding: 0; }
+
+/* Meta editor row */
+.meta-row {
+  display: flex; gap: 16px; padding: 12px 20px 0;
+  background: #FBFBF9; border-bottom: 1px solid #D4D1CA;
+}
+.meta-row .field { flex: 1; }
+.meta-row label {
+  display: block; font-size: 11px; color: #7A7974;
+  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
+}
+.meta-row input {
   width: 100%; padding: 6px 8px; border: 1px solid #D4D1CA; border-radius: 3px;
-  font: inherit; background: #fff;
+  font: inherit; background: #fff; font-size: 13px;
 }
-.field input:focus { outline: none; border-color: #01696F; box-shadow: 0 0 0 2px rgba(1,105,111,0.15); }
-.field input.dirty { border-color: #DA7101; }
-.preview {
-  flex: 1; overflow: auto; padding: 20px; background: #ECEAE3;
-  display: flex; align-items: flex-start; justify-content: center;
+.meta-row input:focus { outline: none; border-color: #01696F; box-shadow: 0 0 0 2px rgba(1,105,111,0.15); }
+.meta-row input:disabled { background: #F2F1EC; color: #7A7974; }
+
+/* Drawlang tab */
+.drawlang-tab textarea {
+  width: 100%; height: 100%; padding: 12px 16px;
+  border: none; outline: none; resize: none;
+  font-family: "SF Mono", Consolas, Menlo, monospace;
+  font-size: 13px; line-height: 1.5; background: #fff; color: #28251D;
 }
-.preview svg {
-  background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-  max-width: 100%; height: auto;
+
+/* Fields tab */
+.fields-tab { padding: 16px 20px; }
+.fields-toolbar {
+  display: flex; gap: 8px; margin-bottom: 12px; align-items: center;
 }
-.hotspot {
-  cursor: text; fill: rgba(218, 113, 1, 0.06); stroke: rgba(218, 113, 1, 0.3);
-  stroke-width: 1; stroke-dasharray: 3,3;
+.fields-toolbar button {
+  padding: 6px 12px; border: 1px solid #D4D1CA; border-radius: 4px;
+  background: #fff; font: inherit; font-size: 13px; cursor: pointer;
 }
-.hotspot:hover { fill: rgba(218, 113, 1, 0.15); stroke: rgba(218, 113, 1, 0.6); }
-.hotspot.active { fill: rgba(1, 105, 111, 0.15); stroke: #01696F; stroke-dasharray: none; stroke-width: 1.5; }
-.saving { opacity: 0.6; pointer-events: none; }
-.error { color: #A12C7B; padding: 8px 12px; background: rgba(161,44,123,0.08); border-radius: 4px; margin: 8px 0; font-size: 13px; }
+.fields-toolbar .scan-hint { font-size: 12px; color: #7A7974; margin-left: 6px; }
+.fields-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.fields-table th {
+  text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600;
+  color: #7A7974; text-transform: uppercase; letter-spacing: 0.5px;
+  border-bottom: 1px solid #D4D1CA;
+}
+.fields-table td {
+  padding: 6px 8px; border-bottom: 1px solid #E5E3DC; vertical-align: middle;
+}
+.fields-table input {
+  width: 100%; padding: 5px 7px; border: 1px solid #D4D1CA; border-radius: 3px;
+  font: inherit; background: #fff; font-size: 13px;
+}
+.fields-table input:focus { outline: none; border-color: #01696F; box-shadow: 0 0 0 2px rgba(1,105,111,0.15); }
+.fields-table .col-name { width: 22%; }
+.fields-table .col-default { width: 22%; }
+.fields-table .col-label { width: 26%; }
+.fields-table .col-tag { width: 15%; text-align: center; }
+.fields-table .col-del { width: 6%; text-align: right; }
+.fields-table .del-btn {
+  background: none; border: none; color: #A12C7B; cursor: pointer;
+  font-size: 16px; padding: 4px 8px;
+}
+.fields-table .tag {
+  display: inline-block; padding: 2px 8px; font-size: 11px;
+  border-radius: 10px; font-weight: 500;
+}
+.tag.declared { background: rgba(1,105,111,0.12); color: #01696F; }
+.tag.undeclared { background: rgba(218,113,1,0.14); color: #964219; }
+.tag.orphan { background: rgba(122,121,116,0.15); color: #7A7974; }
+.fields-empty {
+  padding: 24px; text-align: center; color: #7A7974; font-size: 13px;
+  background: #FBFBF9; border: 1px dashed #D4D1CA; border-radius: 6px;
+}
+
+/* Preview tab */
+.preview-tab { background: #ECEAE3; display: flex; justify-content: center;
+  align-items: flex-start; padding: 20px; }
+.preview-tab svg { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  max-width: 100%; height: auto; }
+.preview-empty { color: #7A7974; padding: 40px; }
+
+.error { color: #A12C7B; padding: 8px 12px; background: rgba(161,44,123,0.08);
+  border-radius: 4px; margin: 8px 0; font-size: 13px; }
+.success { color: #437A22; padding: 4px 12px; font-size: 13px; }
+
+/* Empty pane */
+.empty-pane {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  color: #7A7974; font-size: 14px;
+}
 </style>
 <script src="/static/nav.js" defer></script>
 </head>
@@ -60,21 +162,69 @@ header button.primary { background: #01696F; color: #fff; border-color: #01696F;
 <div id="app-nav"></div>
 <header>
   <h1>Frame Editor</h1>
-  <select id="frame-select"></select>
-  <button id="reset-btn">Reset values</button>
-  <button id="export-dl" title="Download this frame as .drawlang text">Export DrawLang</button>
-  <button id="export-svg" class="primary">Export SVG</button>
-  <button id="export-pdf" class="primary">Export PDF</button>
+  <button id="save-btn" class="primary" disabled>Save</button>
+  <button id="revert-btn" disabled>Revert</button>
   <span class="status" id="status">Loading…</span>
 </header>
 <div class="main">
   <aside class="sidebar">
-    <h2>Title-block fields</h2>
-    <div id="fields"></div>
-    <div id="error"></div>
+    <h2>Frames</h2>
+    <div class="frame-list" id="frame-list"></div>
+    <div class="sidebar-actions">
+      <button id="new-frame-btn">+ New frame</button>
+      <button id="delete-frame-btn" class="danger" disabled>Delete</button>
+    </div>
   </aside>
-  <div class="preview" id="preview">
-    <div style="color:#7A7974">Loading frame…</div>
+  <div class="editor-pane" id="editor-pane">
+    <div class="empty-pane" id="empty-pane">Select a frame or create a new one.</div>
+    <div id="frame-body" style="display:none; flex:1; display:none; flex-direction:column; overflow:hidden;">
+      <div class="meta-row">
+        <div class="field">
+          <label>Frame id</label>
+          <input id="frame-id" disabled>
+        </div>
+        <div class="field">
+          <label>Name</label>
+          <input id="frame-name">
+        </div>
+      </div>
+      <div class="tabs">
+        <div class="tab active" data-tab="drawlang">DrawLang</div>
+        <div class="tab" data-tab="fields">Fields</div>
+        <div class="tab" data-tab="preview">Preview</div>
+      </div>
+      <div class="tab-content drawlang-tab active" data-tab="drawlang">
+        <textarea id="drawlang-input" spellcheck="false"
+          placeholder="Frame drawlang. Use {{token_name}} placeholders for editable fields."></textarea>
+      </div>
+      <div class="tab-content fields-tab" data-tab="fields">
+        <div class="fields-toolbar">
+          <button id="scan-btn">Scan drawlang for tokens</button>
+          <button id="add-field-btn">+ Add field</button>
+          <span class="scan-hint">Undeclared tokens are added as new field rows.</span>
+        </div>
+        <div id="fields-error" class="error" style="display:none"></div>
+        <table class="fields-table" id="fields-table">
+          <thead>
+            <tr>
+              <th class="col-name">Name (token)</th>
+              <th class="col-default">Default value</th>
+              <th class="col-label">Label</th>
+              <th class="col-tag">In drawlang?</th>
+              <th class="col-del"></th>
+            </tr>
+          </thead>
+          <tbody id="fields-tbody"></tbody>
+        </table>
+        <div id="fields-empty" class="fields-empty" style="display:none">
+          No fields yet. Click <b>Scan drawlang for tokens</b> to detect
+          <code>{{name}}</code> placeholders, or <b>+ Add field</b> to declare one manually.
+        </div>
+      </div>
+      <div class="tab-content preview-tab" data-tab="preview">
+        <div id="preview" class="preview-empty">Save the frame to render a preview.</div>
+      </div>
+    </div>
   </div>
 </div>
 

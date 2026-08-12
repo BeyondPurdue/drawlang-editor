@@ -69,22 +69,45 @@
   #svg-host svg { display: block; }
   #svg-host { cursor: crosshair; }
   .coord-hud { position: fixed; bottom: 8px; left: 12px; background: rgba(0,0,0,.7); color: #fff; padding: 4px 8px; border-radius: 3px; font: 12px ui-monospace, monospace; z-index: 10; pointer-events: none; }
+  .frame-chip {
+    display: inline-block; padding: 4px 10px; font-size: 12px;
+    background: #F2F1EC; border: 1px solid #D4D1CA; border-radius: 12px;
+    color: #28251D; max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; user-select: none;
+  }
+  .frame-chip.empty { background: #fff; color: #7A7974; font-style: italic; }
+  .link-btn {
+    background: none; border: none; color: #01696F; cursor: pointer;
+    font: inherit; font-size: 12px; padding: 4px 6px; text-decoration: underline;
+  }
+  .link-btn:hover { color: #0C4E54; }
+  header button:disabled { opacity: 0.5; cursor: not-allowed; }
+  /* Field values modal + panel */
+  .fv-list { display: flex; flex-direction: column; gap: 8px; }
+  .fv-row { display: grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: center; }
+  .fv-row label { font-size: 12px; color: #28251D; overflow: hidden; text-overflow: ellipsis; }
+  .fv-row label .tok { display: block; font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #7A7974; }
+  .fv-row input { padding: 5px 8px; border: 1px solid #D4D1CA; border-radius: 4px; font: inherit; font-size: 13px; }
+  .fv-row input:focus { outline: none; border-color: #01696F; box-shadow: 0 0 0 2px rgba(1,105,111,0.15); }
+  .fv-empty { padding: 20px; text-align: center; color: #7A7974; font-size: 13px; }
+  .fv-hint { font-size: 11px; color: #7A7974; margin: 0 0 12px; }
 </style>
 <script src="/static/nav.js" defer></script>
 </head>
+
 <body>
 <div id="app-nav"></div>
 <div class="app">
   <header>
     <h1>Canvas editor</h1>
     <select id="canvas-select"><option value="">— choose canvas —</option></select>
-    <button id="new-canvas-btn">New</button>
+    <button id="new-canvas-btn">New canvas from frame…</button>
     <button id="dup-canvas-btn" title="Duplicate the current canvas to a new slug">Duplicate</button>
     <input type="text" id="canvas-rename" placeholder="Rename…" style="width:160px" />
     <label style="margin-left:8px;font-size:13px;color:#7a7974">Frame:</label>
-    <select id="frame-select" style="min-width:130px">
-      <option value="">— none —</option>
-    </select>
+    <span id="frame-chip" class="frame-chip" title="This canvas's frame">— none —</span>
+    <button id="change-frame-btn" class="link-btn" title="Change or clear this canvas's frame">change…</button>
+    <button id="field-values-btn" title="Edit field values used to fill frame tokens" disabled>Field values</button>
     <button id="import-btn" title="Append a .drawlang file to this canvas">Import…</button>
     <input type="file" id="import-file" accept=".drawlang,text/plain" style="display:none" />
     <div class="spacer"></div>
@@ -129,17 +152,12 @@
       <div id="library-list"></div>
     </div>
     <div id="frames-panel" style="display:none">
-      <div class="prim-cat">Existing frames</div>
-      <div id="frames-list"></div>
-      <div class="prim-cat" style="margin-top:8px">New frame</div>
-      <input type="text" id="new-frame-id" placeholder="id (e.g. a4-portrait)" style="width:100%;margin-bottom:4px" />
-      <input type="text" id="new-frame-name" placeholder="Display name" style="width:100%;margin-bottom:4px" />
-      <textarea id="new-frame-dl" placeholder="# drawlang source for the frame&#10;mr,0,0;&#10;rt,297,210;" rows="6" style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;margin-bottom:4px"></textarea>
-      <div style="display:flex;gap:4px">
-        <button id="new-frame-create" style="flex:1">Create frame</button>
-        <button id="new-frame-import-btn" title="Import DrawLang file into the source box" style="flex:0 0 auto">Import…</button>
+      <div class="prim-cat">Frames (read-only)</div>
+      <div class="hint" style="font-size:11px;color:#7A7974;margin-bottom:6px">
+        Click a frame to bind it to this canvas. To create or edit frames, open the
+        <a href="/frames-editor" target="_blank">Frame Editor</a>.
       </div>
-      <input type="file" id="new-frame-import-file" accept=".drawlang,text/plain" style="display:none" />
+      <div id="frames-list"></div>
       <div class="status" id="frames-status"></div>
     </div>
     <h2>Save selection as symbol</h2>
@@ -194,6 +212,84 @@
     <div class="modal-footer">
       <button id="prim-modal-cancel">Cancel</button>
       <button id="prim-modal-place" class="primary">Place on canvas</button>
+    </div>
+  </div>
+</div>
+
+<!-- New canvas from frame modal -->
+<div class="modal-backdrop" id="new-canvas-modal">
+  <div class="modal" style="width:520px">
+    <div class="modal-header">
+      <h2>New canvas from frame</h2>
+      <button class="close" data-close="new-canvas-modal" title="Close">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label for="nc-name">Canvas name</label>
+        <input type="text" id="nc-name" placeholder="e.g. Paiton sheet 3">
+      </div>
+      <div class="form-row">
+        <label for="nc-frame">Frame</label>
+        <select id="nc-frame">
+          <option value="">— No frame (blank canvas) —</option>
+        </select>
+      </div>
+      <div style="margin-top:12px">
+        <div style="font-size:12px;color:#7A7974;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Field values (optional)</div>
+        <p class="fv-hint">Values fill <code>{{token}}</code> placeholders in the frame's drawlang. Leave blank to use the frame's defaults.</p>
+        <div id="nc-fields" class="fv-list">
+          <div class="fv-empty">Select a frame to see its editable fields.</div>
+        </div>
+      </div>
+      <div class="status" id="nc-status"></div>
+    </div>
+    <div class="modal-footer">
+      <button data-close="new-canvas-modal">Cancel</button>
+      <button id="nc-create-btn" class="primary">Create canvas</button>
+    </div>
+  </div>
+</div>
+
+<!-- Change frame modal -->
+<div class="modal-backdrop" id="change-frame-modal">
+  <div class="modal" style="width:440px">
+    <div class="modal-header">
+      <h2>Change frame</h2>
+      <button class="close" data-close="change-frame-modal" title="Close">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="fv-hint">Change which frame this canvas uses. Existing field values are preserved.</p>
+      <div class="form-row">
+        <label for="cf-frame">Frame</label>
+        <select id="cf-frame">
+          <option value="">— No frame (blank) —</option>
+        </select>
+      </div>
+      <div class="status" id="cf-status"></div>
+    </div>
+    <div class="modal-footer">
+      <button data-close="change-frame-modal">Cancel</button>
+      <button id="cf-apply-btn" class="primary">Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- Field values modal -->
+<div class="modal-backdrop" id="fv-modal">
+  <div class="modal" style="width:520px">
+    <div class="modal-header">
+      <h2>Field values</h2>
+      <div class="desc" id="fv-frame-info"></div>
+      <button class="close" data-close="fv-modal" title="Close">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="fv-hint">These values fill <code>{{token}}</code> placeholders in the frame's drawlang for this canvas.</p>
+      <div id="fv-fields" class="fv-list"></div>
+      <div class="status" id="fv-status"></div>
+    </div>
+    <div class="modal-footer">
+      <button data-close="fv-modal">Cancel</button>
+      <button id="fv-save-btn" class="primary">Save</button>
     </div>
   </div>
 </div>

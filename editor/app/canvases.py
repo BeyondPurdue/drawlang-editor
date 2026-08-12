@@ -15,6 +15,7 @@ statement-write API on top of these primitives.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import threading
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS canvases (
     slug         TEXT    NOT NULL UNIQUE,
     name         TEXT    NOT NULL,
     frame_id     TEXT,
+    field_values TEXT    NOT NULL DEFAULT '{}',  -- v0.7.6 JSON of frame field values
     created_at   REAL    NOT NULL,
     updated_at   REAL    NOT NULL
 );
@@ -80,10 +82,12 @@ CREATE INDEX IF NOT EXISTS idx_history_canvas_dir_seq
 # bottom so history storage per canvas stays bounded.
 _HISTORY_MAX_DEPTH = 100
 
-# Additive migrations. Each entry is (column_name, DDL fragment). Runs after
-# SCHEMA and swallows the "duplicate column" error so init() stays idempotent.
+# Additive migrations. Each entry is (table, column_name, DDL fragment). Runs
+# after SCHEMA. init() checks for the column first so it stays idempotent.
 _MIGRATIONS = [
-    ("meaning_tag", "ALTER TABLE statements ADD COLUMN meaning_tag TEXT"),
+    ("statements", "meaning_tag", "ALTER TABLE statements ADD COLUMN meaning_tag TEXT"),
+    # v0.7.6: per-canvas frame field values (JSON blob keyed by field name).
+    ("canvases", "field_values", "ALTER TABLE canvases ADD COLUMN field_values TEXT NOT NULL DEFAULT '{}'"),
 ]
 
 
@@ -105,12 +109,18 @@ def init() -> None:
     with _lock:
         c = _conn()
         c.executescript(SCHEMA)
-        existing_cols = {
-            row[1] for row in c.execute("PRAGMA table_info(statements)").fetchall()
-        }
-        for col_name, ddl in _MIGRATIONS:
-            if col_name not in existing_cols:
+        # Cache PRAGMA results per table so we don't re-query on every migration.
+        _cols_cache: dict[str, set[str]] = {}
+        def _cols(table: str) -> set[str]:
+            if table not in _cols_cache:
+                _cols_cache[table] = {
+                    row[1] for row in c.execute(f"PRAGMA table_info({table})").fetchall()
+                }
+            return _cols_cache[table]
+        for table, col_name, ddl in _MIGRATIONS:
+            if col_name not in _cols(table):
                 c.execute(ddl)
+                _cols_cache.pop(table, None)  # refresh next lookup
 
 
 # ---------------------------------------------------------------------------
@@ -164,11 +174,33 @@ def _slug(name: str) -> str:
     return _storage.slugify(name)
 
 
+def _dump_field_values(v: dict | None) -> str:
+    """JSON-serialize a field_values mapping. None/{} both stored as '{}'."""
+    if not v:
+        return "{}"
+    if not isinstance(v, dict):
+        raise ValueError("field_values must be a mapping")
+    return json.dumps({str(k): ("" if val is None else str(val)) for k, val in v.items()},
+                      ensure_ascii=False, sort_keys=True)
+
+
+def _load_field_values(raw: str | None) -> dict:
+    """JSON-deserialize a field_values column. Missing / invalid returns {}."""
+    if not raw:
+        return {}
+    try:
+        v = json.loads(raw)
+        return v if isinstance(v, dict) else {}
+    except Exception:
+        return {}
+
+
 def create_canvas(
     name: str,
     frame_id: str | None = None,
     program: str = "",
     slug: str | None = None,
+    field_values: dict | None = None,
 ) -> dict:
     """
     Create a new canvas. If `program` is given, parse it into statements
@@ -177,6 +209,7 @@ def create_canvas(
     """
     canvas_slug = slug or _slug(name)
     now = time.time()
+    fv_json = _dump_field_values(field_values)
     with _lock:
         c = _conn()
         # Check for slug collision before opening a transaction so we don't
@@ -189,9 +222,9 @@ def create_canvas(
         c.execute("BEGIN;")
         try:
             cur = c.execute(
-                "INSERT INTO canvases (slug, name, frame_id, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (canvas_slug, name, frame_id, now, now),
+                "INSERT INTO canvases (slug, name, frame_id, field_values, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (canvas_slug, name, frame_id, fv_json, now, now),
             )
             canvas_id = cur.lastrowid
             if program:
@@ -230,6 +263,7 @@ def duplicate_canvas(id_or_slug: str | int, *, new_slug: str, new_name: str | No
         slug=new_slug,
         program=program,
         frame_id=canvas.get("frame_id"),
+        field_values=canvas.get("field_values"),
     )
 
 
@@ -238,7 +272,7 @@ def list_canvases() -> list[dict]:
     with _lock:
         c = _conn()
         rows = c.execute(
-            "SELECT c.id, c.slug, c.name, c.frame_id, c.created_at, c.updated_at, "
+            "SELECT c.id, c.slug, c.name, c.frame_id, c.field_values, c.created_at, c.updated_at, "
             "  (SELECT COUNT(*) FROM statements s WHERE s.canvas_id = c.id) AS n "
             "FROM canvases c ORDER BY c.updated_at DESC"
         ).fetchall()
@@ -248,25 +282,26 @@ def list_canvases() -> list[dict]:
             "slug": row[1],
             "name": row[2],
             "frame_id": row[3],
-            "created_at": row[4],
-            "updated_at": row[5],
-            "statement_count": row[6],
+            "field_values": _load_field_values(row[4]),
+            "created_at": row[5],
+            "updated_at": row[6],
+            "statement_count": row[7],
         }
         for row in rows
     ]
 
 
-def _resolve_canvas_row(id_or_slug: str | int) -> tuple[int, str, str, str | None, float, float] | None:
+def _resolve_canvas_row(id_or_slug: str | int) -> tuple[int, str, str, str | None, str | None, float, float] | None:
     with _lock:
         c = _conn()
         if isinstance(id_or_slug, int) or (isinstance(id_or_slug, str) and id_or_slug.isdigit()):
             row = c.execute(
-                "SELECT id, slug, name, frame_id, created_at, updated_at "
+                "SELECT id, slug, name, frame_id, field_values, created_at, updated_at "
                 "FROM canvases WHERE id = ?", (int(id_or_slug),)
             ).fetchone()
         else:
             row = c.execute(
-                "SELECT id, slug, name, frame_id, created_at, updated_at "
+                "SELECT id, slug, name, frame_id, field_values, created_at, updated_at "
                 "FROM canvases WHERE slug = ?", (id_or_slug,)
             ).fetchone()
     return row
@@ -291,8 +326,9 @@ def get_canvas(id_or_slug: str | int) -> dict | None:
             "slug": row[1],
             "name": row[2],
             "frame_id": row[3],
-            "created_at": row[4],
-            "updated_at": row[5],
+            "field_values": _load_field_values(row[4]),
+            "created_at": row[5],
+            "updated_at": row[6],
         },
         "statements": [
             {
@@ -308,25 +344,72 @@ def get_canvas(id_or_slug: str | int) -> dict | None:
     }
 
 
+# v0.7.6: token substitution. `{{name}}` in the frame's drawlang is replaced
+# by the canvas's field_values[name] (fallback to the field's declared
+# default). Tokens without a match are left in place so the user can see the
+# missing slot in the render. Substitution happens ONLY on the frame program
+# — body statements are user-authored and stay untouched.
+_TOKEN_RE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+
+
+def extract_tokens(program: str) -> list[str]:
+    """Return distinct `{{name}}` tokens in a program, in first-seen order."""
+    seen: list[str] = []
+    for m in _TOKEN_RE.finditer(program or ""):
+        name = m.group(1)
+        if name not in seen:
+            seen.append(name)
+    return seen
+
+
+def _substitute_tokens(program: str, values: dict) -> str:
+    if not program or "{{" not in program:
+        return program
+    def repl(m: re.Match) -> str:
+        name = m.group(1)
+        if name in values:
+            v = values[name]
+            return "" if v is None else str(v)
+        return m.group(0)  # leave token in place
+    return _TOKEN_RE.sub(repl, program)
+
+
 def get_canvas_program(id_or_slug: str | int, *, with_frame: bool = True) -> str | None:
     """Reconstruct the drawlang program for a canvas.
 
     If the canvas has a frame_id and with_frame=True, the frame's drawlang is
     prepended so the rendered output shows the frame around the canvas content.
+    Any `{{name}}` tokens in the frame program are substituted from the
+    canvas's field_values (with the frame field's `default` as fallback).
     """
     data = get_canvas(id_or_slug)
     if data is None:
         return None
     body = program_from_statements(data["statements"])
     frame_id = data["canvas"].get("frame_id")
+    field_values = data["canvas"].get("field_values") or {}
     if with_frame and frame_id:
         try:
             # Lazy import to avoid circular dependency
             from . import frames as _frames  # noqa: WPS433
             frame = _frames.get_frame(frame_id)
             frame_prog = frame.get("drawlang") or frame.get("program") or ""
+            # Build a merged value map: frame field defaults first, then
+            # canvas overrides on top. Missing tokens stay as {{name}}.
+            # frames.get_frame() returns editable fields with `value` already
+            # resolved from defaults when no user values were passed.
+            merged: dict = {}
+            for f in (frame.get("fields") or []):
+                if not isinstance(f, dict) or "name" not in f:
+                    continue
+                if "value" in f:
+                    merged[f["name"]] = f["value"]
+                elif "default" in f:
+                    merged[f["name"]] = f["default"]
+            merged.update(field_values or {})
             if frame_prog:
-                return frame_prog.rstrip() + "\n# --- canvas content ---\n" + body
+                composed = _substitute_tokens(frame_prog, merged)
+                return composed.rstrip() + "\n# --- canvas content ---\n" + body
         except Exception:
             # If the frame can't be loaded, fall back to canvas-only render
             pass
@@ -345,18 +428,23 @@ def delete_canvas(id_or_slug: str | int) -> bool:
     return True
 
 
+_UNSET = object()  # sentinel: caller did not pass this argument
+
+
 def update_canvas(
     id_or_slug: str | int,
     *,
     name: str | None = None,
     slug: str | None = None,
     frame_id: str | None = None,
+    field_values: Any = _UNSET,
 ) -> dict | None:
-    """Patch a canvas's name / slug / frame_id.
+    """Patch a canvas's name / slug / frame_id / field_values.
 
     Any argument left as None is preserved. To *clear* frame_id (turn a
     framed canvas into a blank one) pass the sentinel string ``""`` — it
-    is stored as SQL NULL.
+    is stored as SQL NULL. `field_values` uses a separate sentinel so
+    passing an explicit `None` or `{}` is treated as a real clear.
 
     Returns the updated canvas dict, or None if the target does not exist.
     Raises ValueError on slug collision with a different canvas.
@@ -389,6 +477,10 @@ def update_canvas(
         fields.append("frame_id = ?")
         # Empty string means "clear".
         values.append(frame_id if frame_id != "" else None)
+
+    if field_values is not _UNSET:
+        fields.append("field_values = ?")
+        values.append(_dump_field_values(field_values))
 
     if not fields:
         # No-op patch — still return the current row's metadata.
