@@ -23,12 +23,16 @@
     * { box-sizing: border-box; }
     /* app.css (shared with the canvas editor) sets overflow:hidden on
        html+body so the canvas can own the viewport. This is a normal
-       document page — undo that. */
+       document page — undo that, and also block any horizontal
+       overflow so nothing can clip off-screen on narrow phones. */
     html, body {
       margin: 0;
       padding: 0;
-      overflow: auto;
+      overflow-x: hidden;
+      overflow-y: auto;
       height: auto;
+      width: 100%;
+      max-width: 100%;
     }
     body {
       background: var(--bg);
@@ -45,9 +49,10 @@
       max-width: 1080px;
       margin: 0 auto;
       padding: 32px 32px 64px;
+      width: 100%;
     }
     @media (max-width: 860px) {
-      .shell { padding: 20px 20px 48px; }
+      .shell { padding: 20px 16px 48px; }
     }
 
     /* ------------------------------------------------------------------ */
@@ -63,7 +68,9 @@
       grid-template-columns: 1.4fr 1fr;
       gap: 24px;
       align-items: center;
+      min-width: 0;
     }
+    .demo-strip > * { min-width: 0; }
     @media (max-width: 860px) {
       .demo-strip {
         grid-template-columns: 1fr;
@@ -155,6 +162,7 @@
       gap: 56px;
       align-items: start;
     }
+    .page > * { min-width: 0; }
     @media (max-width: 860px) {
       .page {
         grid-template-columns: 1fr;
@@ -337,7 +345,7 @@
     }
     .op-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 6px 20px;
       font-size: 13px;
     }
@@ -388,6 +396,8 @@
       color: var(--text);
       line-height: 1.6;
       overflow-x: auto;
+      max-width: 100%;
+      white-space: pre;
     }
     .example .cm { color: var(--muted); }
   </style>
