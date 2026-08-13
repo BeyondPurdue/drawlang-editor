@@ -21,7 +21,15 @@
       --code-bg:    #f2f0ea;
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; }
+    /* app.css (shared with the canvas editor) sets overflow:hidden on
+       html+body so the canvas can own the viewport. This is a normal
+       document page — undo that. */
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: auto;
+      height: auto;
+    }
     body {
       background: var(--bg);
       color: var(--text);
