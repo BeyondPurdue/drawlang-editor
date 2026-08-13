@@ -31,12 +31,117 @@
     }
 
     /* ------------------------------------------------------------------ */
+    /* Page shell                                                          */
+    /* ------------------------------------------------------------------ */
+    .shell {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 32px 32px 64px;
+    }
+    @media (max-width: 860px) {
+      .shell { padding: 20px 20px 48px; }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Demo strip — full width above the two columns                       */
+    /* ------------------------------------------------------------------ */
+    .demo-strip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 32px;
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 24px;
+      align-items: center;
+    }
+    @media (max-width: 860px) {
+      .demo-strip {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        padding: 16px 18px;
+        margin-bottom: 24px;
+      }
+    }
+    .demo-strip .demo-cta h2 {
+      margin: 0 0 6px;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .demo-strip .demo-cta p {
+      margin: 0 0 14px;
+      font-size: 13px;
+      color: var(--muted);
+      max-width: 46ch;
+    }
+    .demo-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      align-items: center;
+    }
+    button.demo-btn {
+      padding: 10px 18px;
+      border: 0;
+      border-radius: 4px;
+      background: var(--accent);
+      color: var(--surface-2);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    button.demo-btn:hover { background: var(--accent-2); }
+    button.demo-btn:focus-visible {
+      outline: 2px solid var(--accent-2);
+      outline-offset: 2px;
+    }
+    .demo-actions a.wiki-link {
+      font-size: 13px;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .demo-actions a.wiki-link:hover { text-decoration: underline; }
+    .demo-actions .sep { color: var(--faint); }
+
+    /* 16:9 video placeholder — real <video> or <iframe> drops in later.   */
+    .demo-video {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: var(--code-bg);
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+      padding: 10px;
+    }
+    .demo-video::before {
+      content: "▶";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -140%);
+      font-size: 22px;
+      color: var(--faint);
+      line-height: 1;
+    }
+    .demo-video span {
+      margin-top: 28px;
+      display: block;
+    }
+
+    /* ------------------------------------------------------------------ */
     /* Layout: two-column on desktop, stacked on mobile (sign-in first)   */
     /* ------------------------------------------------------------------ */
     .page {
-      max-width: 1080px;
-      margin: 0 auto;
-      padding: 48px 32px 64px;
       display: grid;
       grid-template-columns: 1.35fr 1fr;
       gap: 56px;
@@ -45,7 +150,6 @@
     @media (max-width: 860px) {
       .page {
         grid-template-columns: 1fr;
-        padding: 32px 20px 48px;
         gap: 32px;
       }
       /* On mobile the sign-in card comes first, then the explainer. */
@@ -281,6 +385,34 @@
   </style>
 </head>
 <body>
+  <div class="shell">
+
+    <!-- ============================================================ -->
+    <!-- DEMO STRIP — full width, above the two columns               -->
+    <!-- ============================================================ -->
+    <section class="demo-strip" aria-label="Try the demo">
+      <div class="demo-cta">
+        <h2>Try the demo — no account needed</h2>
+        <p>
+          Signs you in as a read-only demo user. Your changes reset every
+          night at 03:00 Madrid — draw freely.
+        </p>
+        <div class="demo-actions">
+          <button type="button" id="demoBtn" class="demo-btn">
+            Try the demo →
+          </button>
+          <a class="wiki-link" href="https://github.com/BeyondPurdue/drawlang-editor/wiki"
+             target="_blank" rel="noopener">Read the wiki</a>
+          <span class="sep">·</span>
+          <a class="wiki-link" href="https://github.com/BeyondPurdue/drawlang-editor/blob/main/docs/spec/drawing-language-spec.md"
+             target="_blank" rel="noopener">Language spec</a>
+        </div>
+      </div>
+      <div class="demo-video" aria-label="Demo video placeholder">
+        <span>Demo video coming soon</span>
+      </div>
+    </section>
+
   <div class="page">
 
     <!-- ============================================================ -->
@@ -397,6 +529,7 @@ tx,0.,A1;</pre>
       </div>
     </section>
 
+  </div>
   </div>
   <script src="/static/login.js"></script>
 </body>
