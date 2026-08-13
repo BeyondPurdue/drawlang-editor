@@ -2,50 +2,401 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Sign in — DrawLang Editor</title>
+  <title>DrawLang — a small language for control-system drawings</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="DrawLang is a small, frozen, text-based drawing language for control-system drawings. Every line, symbol, and character of text on a drawing is one opcode in a plain-text program. Open source editor at editor.drawlang.com.">
   <link rel="stylesheet" href="/static/app.css">
   <style>
-    body { background: #f7f6f2; color: #28251d; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; margin: 0; }
-    .auth-wrap { max-width: 380px; margin: 8vh auto 0; padding: 32px 28px; background: #fff; border: 1px solid #d4d1ca; border-radius: 8px; }
-    .auth-wrap h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
-    .auth-wrap p.sub { margin: 0 0 20px; color: #7a7974; font-size: 14px; }
-    label { display: block; font-size: 12px; color: #7a7974; margin: 12px 0 4px; }
+    :root {
+      --bg:         #f7f6f2;
+      --surface:    #ffffff;
+      --surface-2:  #fbfbf9;
+      --border:     #d4d1ca;
+      --text:       #28251d;
+      --muted:      #7a7974;
+      --faint:      #bab9b4;
+      --accent:     #01696f;
+      --accent-2:   #0c4e54;
+      --err:        #a12c7b;
+      --code-bg:    #f2f0ea;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Layout: two-column on desktop, stacked on mobile (sign-in first)   */
+    /* ------------------------------------------------------------------ */
+    .page {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 48px 32px 64px;
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 56px;
+      align-items: start;
+    }
+    @media (max-width: 860px) {
+      .page {
+        grid-template-columns: 1fr;
+        padding: 32px 20px 48px;
+        gap: 32px;
+      }
+      /* On mobile the sign-in card comes first, then the explainer. */
+      .page .auth-col { order: 1; }
+      .page .story-col { order: 2; }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Sign-in card (right column on desktop)                              */
+    /* ------------------------------------------------------------------ */
+    .auth-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 28px 26px;
+      position: sticky;
+      top: 32px;
+    }
+    @media (max-width: 860px) {
+      .auth-wrap { position: static; }
+    }
+    .auth-wrap h1 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .auth-wrap p.sub {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin: 12px 0 4px;
+      font-weight: 500;
+    }
     input[type=text], input[type=email], input[type=password] {
-      width: 100%; padding: 8px 10px; border: 1px solid #d4d1ca; border-radius: 4px;
-      font-size: 14px; box-sizing: border-box; background: #fbfbf9; color: #28251d;
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 14px;
+      background: var(--surface-2);
+      color: var(--text);
+      font-family: inherit;
+    }
+    input:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+      border-color: var(--accent);
     }
     button.primary {
-      margin-top: 20px; width: 100%; padding: 10px 12px; border: 0; border-radius: 4px;
-      background: #01696f; color: #fbfbf9; font-size: 14px; font-weight: 500; cursor: pointer;
+      margin-top: 20px;
+      width: 100%;
+      padding: 10px 12px;
+      border: 0;
+      border-radius: 4px;
+      background: var(--accent);
+      color: var(--surface-2);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
     }
-    button.primary:hover { background: #0c4e54; }
-    .err { color: #a12c7b; font-size: 13px; margin-top: 12px; min-height: 18px; }
-    .demo { margin-top: 16px; padding: 12px; background: #f7f6f2; border: 1px dashed #d4d1ca; border-radius: 4px; font-size: 13px; color: #7a7974; }
-    .demo b { color: #28251d; }
-    .foot { margin-top: 20px; text-align: center; font-size: 13px; color: #7a7974; }
-    .foot a { color: #01696f; text-decoration: none; }
+    button.primary:hover { background: var(--accent-2); }
+    button.primary:focus-visible {
+      outline: 2px solid var(--accent-2);
+      outline-offset: 2px;
+    }
+    .err {
+      color: var(--err);
+      font-size: 13px;
+      margin-top: 12px;
+      min-height: 18px;
+    }
+    .demo {
+      margin-top: 16px;
+      padding: 12px;
+      background: var(--bg);
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .demo b { color: var(--text); }
+    .foot {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .foot a { color: var(--accent); text-decoration: none; }
+    .foot a:hover { text-decoration: underline; }
+
+    /* ------------------------------------------------------------------ */
+    /* Story column (left on desktop, below on mobile)                     */
+    /* ------------------------------------------------------------------ */
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+    .brand-mark {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .brand-version {
+      font-size: 12px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .tagline {
+      font-size: 22px;
+      line-height: 1.35;
+      color: var(--text);
+      margin: 0 0 20px;
+      max-width: 34ch;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+    }
+    .lede {
+      font-size: 15px;
+      color: var(--text);
+      max-width: 60ch;
+      margin: 0 0 28px;
+    }
+    .lede em {
+      font-style: normal;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    /* Feature blocks */
+    .features {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .feature {
+      padding: 14px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .feature h3 {
+      margin: 0 0 4px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.01em;
+    }
+    .feature p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    /* Opcode teaser */
+    .opcodes {
+      margin: 0 0 28px;
+    }
+    .opcodes h4 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .op-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 6px 20px;
+      font-size: 13px;
+    }
+    .op-grid div { display: flex; gap: 10px; }
+    .op-grid code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: var(--code-bg);
+      padding: 1px 6px;
+      border-radius: 3px;
+      color: var(--text);
+      font-size: 12px;
+      min-width: 26px;
+      text-align: center;
+    }
+    .op-grid span.op-desc { color: var(--muted); }
+    .op-grid .ext code {
+      background: var(--surface-2);
+      border: 1px dashed var(--border);
+      padding: 0 5px;
+    }
+
+    /* Links row */
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      font-size: 14px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+    .links a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .links a:hover { text-decoration: underline; }
+    .links .sep { color: var(--faint); }
+
+    /* Small "example program" snippet */
+    .example {
+      margin: 0 0 28px;
+      padding: 14px 16px;
+      background: var(--code-bg);
+      border-left: 3px solid var(--accent);
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12.5px;
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: auto;
+    }
+    .example .cm { color: var(--muted); }
   </style>
 </head>
 <body>
-  <div class="auth-wrap">
-    <h1>DrawLang Editor</h1>
-    <p class="sub">Sign in to your account</p>
-    <form id="loginForm">
-      <label for="email">Email or username</label>
-      <input type="text" id="email" name="email" autocomplete="username" required>
-      <label for="password">Password</label>
-      <input type="password" id="password" name="password" autocomplete="current-password" required>
-      <button type="submit" class="primary">Sign in</button>
-      <div class="err" id="err"></div>
-    </form>
-    <div class="demo">
-      <b>Try the demo:</b> username <b>demo</b>, password <b>demo</b>.
-      Resets every night — draw freely.
-    </div>
-    <div class="foot">
-      No account? <a href="/register">Request access</a>
-    </div>
+  <div class="page">
+
+    <!-- ============================================================ -->
+    <!-- STORY COLUMN                                                  -->
+    <!-- ============================================================ -->
+    <section class="story-col" aria-label="About DrawLang">
+
+      <div class="brand">
+        <span class="brand-mark">DrawLang</span>
+        <span class="brand-version">spec v0.7 · open source</span>
+      </div>
+
+      <p class="tagline">
+        A small language for control-system drawings.
+      </p>
+
+      <p class="lede">
+        Every DCS drawing system has the same shape underneath: a compact list of
+        <em>pen instructions</em> in a database, and a renderer that turns those
+        instructions into paper. The database is the source of truth. The rendered
+        page is disposable. DrawLang is that language, made explicit — small,
+        frozen, and human-readable.
+      </p>
+
+      <div class="features">
+        <div class="feature">
+          <h3>The language</h3>
+          <p>
+            7 core opcodes, frozen forever, plus 4 additive extensions. Two-letter
+            mnemonics, comma-separated args, semicolon-terminated. A whole drawing
+            is a flat text program. No hidden primitives, no vendor extensions.
+          </p>
+        </div>
+        <div class="feature">
+          <h3>The editor</h3>
+          <p>
+            Open-source web editor for A3 FUP frames with 28×14-cell grid
+            coordinates. Drop pre-built symbols, save your own library, edit
+            statement-by-statement, or type plain English
+            (<em>“move right 20”</em>, <em>“line down 30”</em>).
+          </p>
+        </div>
+        <div class="feature">
+          <h3>The idea</h3>
+          <p>
+            Drawings you make are plain-text programs you can commit to git, diff,
+            template, and round-trip through any compliant interpreter forever.
+            No cloud lock-in. No vendor account. SQLite behind a public API.
+          </p>
+        </div>
+      </div>
+
+      <pre class="example" aria-label="Example DrawLang program">
+<span class="cm"># draw a labeled 14×1 line — this is a valid DrawLang program</span>
+mr,0,158;
+dl,14,0;
+mr,0,-1;
+dl,-14,0;
+tz,8;
+tx,0.,A1;</pre>
+
+      <div class="opcodes">
+        <h4>The 11 opcodes</h4>
+        <div class="op-grid">
+          <div><code>mr</code><span class="op-desc">move relative</span></div>
+          <div><code>ma</code><span class="op-desc">move absolute</span></div>
+          <div><code>dl</code><span class="op-desc">draw line</span></div>
+          <div><code>rt</code><span class="op-desc">rectangle</span></div>
+          <div><code>ci</code><span class="op-desc">circle</span></div>
+          <div><code>tz</code><span class="op-desc">text size</span></div>
+          <div><code>tx</code><span class="op-desc">text</span></div>
+          <div class="ext"><code>ar</code><span class="op-desc">arc</span></div>
+          <div class="ext"><code>bz</code><span class="op-desc">Bézier curve</span></div>
+          <div class="ext"><code>sp</code><span class="op-desc">spline</span></div>
+          <div class="ext"><code>im</code><span class="op-desc">image reference</span></div>
+        </div>
+      </div>
+
+      <nav class="links" aria-label="External links">
+        <a href="https://github.com/BeyondPurdue/drawlang-editor"
+           target="_blank" rel="noopener">GitHub repository</a>
+        <span class="sep">·</span>
+        <a href="https://github.com/BeyondPurdue/drawlang-editor/blob/main/docs/spec/drawing-language-spec.md"
+           target="_blank" rel="noopener">Language specification</a>
+        <span class="sep">·</span>
+        <a href="https://www.reddit.com/r/drawlang/"
+           target="_blank" rel="noopener">r/drawlang</a>
+      </nav>
+
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- SIGN-IN COLUMN                                                -->
+    <!-- ============================================================ -->
+    <section class="auth-col" aria-label="Sign in">
+      <div class="auth-wrap">
+        <h1>Sign in</h1>
+        <p class="sub">Access your DrawLang editor account.</p>
+        <form id="loginForm">
+          <label for="email">Email or username</label>
+          <input type="text" id="email" name="email" autocomplete="username" required>
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" autocomplete="current-password" required>
+          <button type="submit" class="primary">Sign in</button>
+          <div class="err" id="err" role="alert" aria-live="polite"></div>
+        </form>
+        <div class="demo">
+          <b>Try the demo:</b> username <b>demo</b>, password <b>demo</b>.
+          Resets every night — draw freely.
+        </div>
+        <div class="foot">
+          No account? <a href="/register">Request access</a>
+        </div>
+      </div>
+    </section>
+
   </div>
   <script src="/static/login.js"></script>
 </body>
