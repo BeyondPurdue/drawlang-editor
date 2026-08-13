@@ -449,6 +449,22 @@
       overflow-x: auto;
       max-width: 100%;
       white-space: pre;
+      /* Fixed height so the block doesn't jump as lines are typed in */
+      min-height: 320px;
+    }
+    @media (max-width: 720px) {
+      .anatomy pre.code { min-height: 260px; }
+    }
+    /* Blinking caret at end of the currently-typed line */
+    .anatomy pre.code .cursor {
+      display: inline-block;
+      color: var(--accent);
+      font-weight: 600;
+      animation: blink 900ms steps(2, jump-none) infinite;
+    }
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      50.01%, 100% { opacity: 0.25; }
     }
     .anatomy-render {
       display: flex;
@@ -466,6 +482,30 @@
       min-height: 160px;
     }
     .render-box svg { width: 100%; height: auto; max-width: 260px; display: block; }
+    /* Empty state for the animation container before first paint */
+    #anatomy-render { width: 100%; display: flex; align-items: center; justify-content: center; }
+    #anatomy-render svg { max-width: 260px; }
+    .anatomy-controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+      margin-top: -8px;
+    }
+    .anatomy-controls button {
+      appearance: none;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      line-height: 1.4;
+    }
+    .anatomy-controls button:hover { border-color: var(--accent); color: var(--accent); }
+    .anatomy-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .render-caption {
       font-size: 12px;
       color: var(--muted);
@@ -592,42 +632,17 @@
       </p>
 
       <div class="anatomy-grid">
-        <pre class="code">ma,40,40;
-rt,80,60,f,c2;
-ma,20,65;
-dl,20,0;
-ma,20,55;
-dl,20,0;
-ma,120,70;
-dl,20,0;
-ma,15,65;
-ci,3,f,c1;
-ma,15,55;
-ci,3,f,c1;
-ma,145,70;
-ci,3,f,c1;
-tz,14;
-ma,58,63;
-tx,0,AND;</pre>
+        <pre class="code" id="anatomy-code" aria-live="polite" aria-label="DrawLang program being typed statement-by-statement"></pre>
 
         <div class="anatomy-render">
-          <div class="render-box" aria-label="AND-gate rendered from the program on the left">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="8 -104.0 144 68.0" preserveAspectRatio="xMidYMid meet" role="img" aria-label="AND gate: red rectangle with two input ports on the left and one output port on the right, labelled AND">
-              <style>line,rect,path,polyline,polygon,circle,ellipse{vector-effect:non-scaling-stroke}</style>
-              <g transform="scale(1 -1)">
-                <rect x="40" y="40" width="80" height="60" stroke="#c62828" stroke-width="1.0" fill="#c62828" />
-                <line x1="20" y1="65" x2="40" y2="65" stroke="#000000" stroke-width="1.0" fill="none" />
-                <line x1="20" y1="55" x2="40" y2="55" stroke="#000000" stroke-width="1.0" fill="none" />
-                <line x1="120" y1="70" x2="140" y2="70" stroke="#000000" stroke-width="1.0" fill="none" />
-                <circle cx="15" cy="65" r="3" stroke="#000000" stroke-width="1.0" fill="#000000" />
-                <circle cx="15" cy="55" r="3" stroke="#000000" stroke-width="1.0" fill="#000000" />
-                <circle cx="145" cy="70" r="3" stroke="#000000" stroke-width="1.0" fill="#000000" />
-                <g transform="translate(58 63) scale(1 -1) rotate(0)"><text x="0" y="0" font-family="sans-serif" font-size="14" fill="#ffffff" font-weight="600">AND</text></g>
-              </g>
-            </svg>
+          <div class="render-box" id="anatomy-render" aria-label="AND-gate being drawn from the program on the left">
+            <!-- SVG injected by /static/anatomy.js -->
+          </div>
+          <div class="anatomy-controls">
+            <button type="button" id="anatomy-toggle" aria-pressed="false" title="Pause or play the animation">Pause</button>
           </div>
           <div class="render-caption">
-            Rendered from the exact program on the left — no post-processing.
+            Each statement is executed as it is typed — no post-processing.
           </div>
 
           <ul class="anatomy-legend" aria-label="How to read the program">
@@ -783,5 +798,6 @@ tx,0.,A1;</pre>
   </div>
   </div>
   <script src="/static/login.js"></script>
+  <script src="/static/anatomy.js"></script>
 </body>
 </html>
