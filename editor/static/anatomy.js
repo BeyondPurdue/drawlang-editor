@@ -28,9 +28,9 @@
   ];
 
   const VIEWBOX = '8 -104.0 144 68.0';
-  const TYPE_MS = 22;             // ms per character while typing
-  const STATEMENT_PAUSE = 240;    // ms to hold after each statement renders
-  const RESET_PAUSE = 1800;       // ms to hold the final image before restart
+  const TYPE_MS = 28;             // ms per character while typing
+  const STATEMENT_PAUSE = 320;    // ms to hold after each statement renders
+  const RESET_PAUSE = 3200;       // ms to hold the final image before restart
 
   function ready(fn) {
     if (document.readyState !== 'loading') fn();
@@ -61,12 +61,18 @@
     }
 
     function paint(inner) {
+      // Ghost outline shown when nothing has been drawn yet, so the render
+      // box doesn't look 'broken' during the very first statements which
+      // only move the pen.
+      const ghost = inner ? '' :
+        '<rect x="40" y="40" width="80" height="60" ' +
+        'stroke="#d4d1ca" stroke-width="1.0" stroke-dasharray="3 3" fill="none" />';
       renderEl.innerHTML =
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + VIEWBOX + '" ' +
         'preserveAspectRatio="xMidYMid meet" role="img" ' +
         'aria-label="AND gate being drawn statement-by-statement">' +
         '<style>line,rect,path,polyline,polygon,circle,ellipse{vector-effect:non-scaling-stroke}</style>' +
-        '<g transform="scale(1 -1)">' + inner + '</g>' +
+        '<g transform="scale(1 -1)">' + ghost + inner + '</g>' +
         '</svg>';
     }
 
