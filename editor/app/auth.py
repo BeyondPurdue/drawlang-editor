@@ -83,6 +83,16 @@ INITIAL_ADMIN_EMAIL = os.environ.get(
 # Public alias for the seeded admin address. Used by the API to look up
 # the admin user id so admin-owned frames/library items can be shared.
 ADMIN_EMAIL = INITIAL_ADMIN_EMAIL
+
+# Additional admins. Idempotently promoted to role='admin', status='active'
+# on every startup. Users must already exist (created via /register); this
+# only elevates their role.
+EXTRA_ADMIN_EMAILS: tuple[str, ...] = tuple(
+    e.strip() for e in os.environ.get(
+        "DRAWLANG_EXTRA_ADMINS",
+        "roupec@bohemiamarket.com",
+    ).split(",") if e.strip()
+)
 INITIAL_ADMIN_PASSWORD = os.environ.get(
     "DRAWLANG_ADMIN_PASSWORD", "changeme-please"
 )
@@ -188,6 +198,20 @@ def _seed_admin_and_demo() -> None:
                     hash_password(INITIAL_ADMIN_PASSWORD), now, now,
                 ),
             )
+        # Promote any pre-existing users listed in EXTRA_ADMIN_EMAILS.
+        for email in EXTRA_ADMIN_EMAILS:
+            row = c.execute(
+                "SELECT id, role, status FROM users WHERE email = ?", (email,)
+            ).fetchone()
+            if row is None:
+                continue
+            uid, role, status = row[0], row[1], row[2]
+            if role != "admin" or status != "active":
+                c.execute(
+                    "UPDATE users SET role = 'admin', status = 'active', "
+                    "updated_at = ? WHERE id = ?",
+                    (now, uid),
+                )
         c.commit()
 
 
