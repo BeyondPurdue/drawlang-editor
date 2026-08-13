@@ -1,0 +1,69 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>One-shot cleanup</title>
+<style>body{font:14px ui-monospace,Menlo,Consolas,monospace;padding:20px;background:#111;color:#ddd}
+pre{background:#000;padding:10px;border:1px solid #333;border-radius:4px;white-space:pre-wrap;max-width:900px}
+button{padding:8px 16px;font:inherit;background:#01696f;color:#fff;border:0;border-radius:4px;cursor:pointer}
+button:disabled{background:#333;cursor:not-allowed}</style>
+<h1>Frame copyright cleanup + demo-canvas wipe</h1>
+<p>Fetches each frame's cleaned drawlang from this directory, PATCHes it back to
+the API, then deletes any canvases owned by the current admin user.</p>
+<button id="go">Run cleanup</button>
+<pre id="log">Idle.</pre>
+<script>
+const FRAMES = [
+  "BM-Global-V1-clean-sheet",
+  "BM-Global-V1-dots",
+  "BM-Global-V1-milimeter-grid",
+  "a3-bm-global",
+  "a3-bm-global-1",
+  "a3-empty",
+  "a3-grid",
+  "a3-panglima",
+];
+const log = document.getElementById('log');
+function line(s){ log.textContent += '\n' + s; console.log(s); }
+document.getElementById('go').addEventListener('click', async () => {
+  document.getElementById('go').disabled = true;
+  log.textContent = 'Starting...';
+
+  // 1) whoami
+  try {
+    const me = await (await fetch('/api/auth/me')).json();
+    line('Logged in as: ' + (me.user?.email || '?') + ' (role=' + (me.user?.role || '?') + ')');
+    if (!me.user || me.user.role !== 'admin') {
+      line('ERROR: not admin. Please log in as petr@bohemiamarket.com first.');
+      return;
+    }
+  } catch(e){ line('auth check failed: '+e); return; }
+
+  // 2) Clean frames
+  for (const fid of FRAMES) {
+    try {
+      const dl = await (await fetch('/static/_cleanup_data/' + encodeURIComponent(fid) + '.txt')).text();
+      const raw = await (await fetch('/api/frames/' + encodeURIComponent(fid) + '/raw')).json();
+      const body = { name: raw.name, drawlang: dl, fields: raw.fields || [] };
+      const r = await fetch('/api/frames/' + encodeURIComponent(fid), {
+        method: 'PATCH',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body),
+      });
+      line(`  frame ${fid}: ${r.ok ? 'OK ('+dl.split('\n').length+' lines)' : 'FAIL '+r.status}`);
+    } catch(e){ line(`  frame ${fid}: ERR ${e}`); }
+  }
+
+  // 3) Delete every canvas the admin owns
+  try {
+    const list = await (await fetch('/api/canvases')).json();
+    line('Deleting canvases owned by admin:');
+    for (const c of (list.canvases || [])) {
+      // The list endpoint returns all canvases the user can see. We want to
+      // delete only ones the admin owns — the API filters DELETE by owner.
+      const r = await fetch('/api/canvases/' + c.id, { method: 'DELETE' });
+      line(`  canvas #${c.id} "${c.name}" (slug=${c.slug}): ${r.ok ? 'OK' : 'FAIL '+r.status}`);
+    }
+  } catch(e){ line('canvas delete failed: '+e); }
+
+  line('\nDone.');
+});
+</script>
