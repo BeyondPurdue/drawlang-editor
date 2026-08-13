@@ -3,7 +3,7 @@
 **Status:** DRAFT for approval — no code until you say yes.
 **Author:** BM Global
 **Language target:** Drawlang v0.6 (LOCKED, no new opcodes)
-**Deployed today:** `b681130` on `editor.beyondpurdue.com`
+**Deployed today:** `b681130` on `editor.drawlang.com`
 
 This document is the single source of truth for the next editor. When you approve it, work starts step by step, one deliverable per step, waiting for your green light between each.
 
@@ -22,7 +22,7 @@ This document is the single source of truth for the next editor. When you approv
 
 ## 2. What the editor is
 
-A single web application at `editor.beyondpurdue.com` with two main surfaces:
+A single web application at `editor.drawlang.com` with two main surfaces:
 
 - **Canvas editor.** For building drawings by placing lines, shapes, text, and library symbols on a paper frame.
 - **Library manager.** For creating and organizing reusable **Group Symbols** (motors, valves, frames, title blocks — anything).

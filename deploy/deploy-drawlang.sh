@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# deploy-drawlang.sh — auto-deploy script for editor.beyondpurdue.com
+# deploy-drawlang.sh — auto-deploy script for editor.drawlang.com
 #
 # Runs every 2 minutes via drawlang-deploy.timer. Idempotent: if there's
 # nothing new on origin/main, it exits without touching the running service.

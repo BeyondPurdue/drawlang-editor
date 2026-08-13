@@ -7,7 +7,7 @@ Nothing is drawn by ad-hoc code. Programs in the language are short ASCII string
 interpreter. Backends translate the interpreter's abstract calls into SVG, PostScript, or PDF.
 
 - **Language spec:** [`docs/spec/drawing-language-spec.md`](docs/spec/drawing-language-spec.md) — current. Version history in [`docs/spec/history/`](docs/spec/history/).
-- **Live editor:** [drawlang.com](https://drawlang.com)
+- **Live editor:** [editor.drawlang.com](https://editor.drawlang.com)
 - **Community:** [r/drawlang](https://www.reddit.com/r/drawlang/)
 - **License:** Apache 2.0 — © 2026 Beyond Purdue contributors
 
@@ -175,7 +175,7 @@ Contributions welcome — bug reports, new backends, editor features, documentat
 
 ## Community
 
-- **Live editor:** [drawlang.com](https://drawlang.com) — try the language in your browser
+- **Live editor:** [editor.drawlang.com](https://editor.drawlang.com) — try the language in your browser
 - **Reddit:** [r/drawlang](https://www.reddit.com/r/drawlang/) — discussions, drawings, questions
 - **Issues:** [GitHub issues](https://github.com/BeyondPurdue/drawlang-editor/issues) — bugs and feature requests
 

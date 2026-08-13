@@ -1,19 +1,21 @@
 # Bootstrap: Drawing Language Editor on Hetzner CX22 / Debian 13
 
-One-time server setup for `editor.beyondpurdue.com`. After this runs, every
+One-time server setup for `editor.drawlang.com`. After this runs, every
 push to `main` on GitHub is picked up automatically within ~2 minutes.
 
 **Target server:** Hetzner Cloud CX22, Debian 13 (Trixie), `65.109.134.47`
-**Domain:** `editor.beyondpurdue.com` → A record pointing at that IP
+**Primary domain:** `editor.drawlang.com` → A record pointing at that IP
+**Legacy domain (301 redirect):** `editor.beyondpurdue.com` → same IP
 **Repo:** `https://github.com/BeyondPurdue/drawlang-editor` (public)
 
 ---
 
 ## 0. Prerequisites (confirm before starting)
 
-- [x] DNS A record for `editor.beyondpurdue.com` → `65.109.134.47`
+- [x] DNS A record for `editor.drawlang.com` → `65.109.134.47`
+- [x] DNS A record for `editor.beyondpurdue.com` → `65.109.134.47` (kept for legacy 301 redirect)
 - [x] SSH access to the server as `root`
-- [ ] DNS propagated (`dig +short editor.beyondpurdue.com` returns `65.109.134.47`)
+- [ ] DNS propagated (`dig +short editor.drawlang.com` returns `65.109.134.47`)
 
 If DNS is not yet propagated, everything below still works — you just have
 to wait for propagation before Caddy can issue the TLS cert (Step 8).
@@ -168,14 +170,36 @@ systemctl status caddy --no-pager | head -15
 
 At this point:
 - The editor is running on `127.0.0.1:8765`.
-- Caddy is reverse-proxying `https://editor.beyondpurdue.com` → the editor.
+- Caddy is reverse-proxying `https://editor.drawlang.com` → the editor,
+  and `https://editor.beyondpurdue.com` → 301 permanent redirect to the
+  primary hostname (preserves path + query).
 - Once DNS resolves and the first HTTPS request comes in, Caddy will
-  auto-provision a Let's Encrypt cert. Watch it happen:
+  auto-provision a Let's Encrypt cert for each hostname. Watch it happen:
 
 ```bash
 journalctl -u caddy -f
-# In another shell:  curl -v https://editor.beyondpurdue.com/examples
+# In another shell:  curl -v https://editor.drawlang.com/examples
 ```
+
+### Gotcha: per-hostname log files
+
+The Caddyfile writes an access log to `/var/log/caddy/<hostname>.log`.
+Caddy runs as the unprivileged `caddy` user and can only write to files
+it owns. When you **add a new hostname** or **rename an existing one**
+(as with the drawlang.com cutover), pre-create the log file before
+reloading Caddy:
+
+```bash
+sudo touch /var/log/caddy/editor.drawlang.com.log
+sudo chown caddy:caddy /var/log/caddy/editor.drawlang.com.log
+sudo chmod 640 /var/log/caddy/editor.drawlang.com.log
+sudo systemctl reload caddy
+```
+
+Symptom if you forget: `caddy validate` says `Valid configuration` but
+`systemctl reload caddy` fails with `open /var/log/caddy/<host>.log:
+permission denied` in the journal. The old config keeps running — the
+reload safely refuses to apply the new one.
 
 ---
 
@@ -186,12 +210,17 @@ journalctl -u caddy -f
 curl -sS -o /dev/null -w "HTTP %{http_code}\n" http://127.0.0.1:8765/examples
 # HTTP 200
 
-# Once DNS resolves:
-curl -sS -o /dev/null -w "HTTP %{http_code}\n" https://editor.beyondpurdue.com/examples
+# Once DNS resolves — primary hostname:
+curl -sS -o /dev/null -w "HTTP %{http_code}\n" https://editor.drawlang.com/examples
 # HTTP 200
+
+# Legacy hostname — must return a 301 to the primary:
+curl -sSI https://editor.beyondpurdue.com/examples | head -3
+# HTTP/2 301
+# location: https://editor.drawlang.com/examples
 ```
 
-Open `https://editor.beyondpurdue.com` in a browser. The editor should
+Open `https://editor.drawlang.com` in a browser. The editor should
 load with the full template library (2,460 items) and all endpoints
 should work (render, save, examples, reference, PDF export).
 

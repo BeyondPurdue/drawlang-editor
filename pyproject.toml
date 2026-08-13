@@ -40,7 +40,7 @@ dev = [
 Homepage = "https://github.com/BeyondPurdue/drawlang-editor"
 Repository = "https://github.com/BeyondPurdue/drawlang-editor"
 Issues = "https://github.com/BeyondPurdue/drawlang-editor/issues"
-Community = "https://www.reddit.com/r/BeyondPurdue/"
+Community = "https://www.reddit.com/r/drawlang/"
 
 [tool.setuptools.packages.find]
 where = ["src"]
