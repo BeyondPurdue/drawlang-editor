@@ -6,7 +6,10 @@
 #   sudo cp /var/www/drawlang-editor/deploy/Caddyfile /etc/caddy/Caddyfile
 #   sudo systemctl reload caddy
 
-editor.beyondpurdue.com {
+# ----------------------------------------------------------------------------
+# Primary hostname — editor.drawlang.com
+# ----------------------------------------------------------------------------
+editor.drawlang.com {
     # Automatic HTTPS via Let's Encrypt (Caddy handles the ACME dance)
     encode gzip zstd
 
@@ -35,16 +38,27 @@ editor.beyondpurdue.com {
         header_up X-Forwarded-Host {host}
     }
 
-    # Rate-limit /export/pdf later if abuse becomes an issue — Caddy
-    # rate_limit plugin or a small FastAPI middleware. For now, none.
-
     log {
-        output file /var/log/caddy/editor.beyondpurdue.com.log {
+        output file /var/log/caddy/editor.drawlang.com.log {
             roll_size 10mb
             roll_keep 5
         }
         format json
     }
+}
+
+# ----------------------------------------------------------------------------
+# Legacy hostname — editor.beyondpurdue.com
+# Permanent redirect to editor.drawlang.com. Preserves path + query so any
+# deep-linked frame/canvas URL keeps working.
+# ----------------------------------------------------------------------------
+editor.beyondpurdue.com {
+    encode gzip zstd
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+    redir https://editor.drawlang.com{uri} permanent
 }
 
 # If someone probes the server by raw IP address (or an unrelated hostname
