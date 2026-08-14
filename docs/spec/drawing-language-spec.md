@@ -37,6 +37,7 @@
 14. [Versioning](#14-versioning)
 15. [Glossary](#15-glossary)
 16. [Semantic Layer — Meaning Tags](#16-semantic-layer--meaning-tags)
+17. [Revision History](#17-revision-history)
 
 ---
 
@@ -884,16 +885,9 @@ This specification is versioned. Version numbers follow **major.minor** semantic
 
 Current version: **0.6 (locked, 2026-08-09)**. Approved by the project owner as the frozen reference. All interpreters and programs are built against this version.
 
-**Version history:**
-
-- **0.6 (2026-08-09).** Palette model made explicit in §5.4. Palette index 0 is reserved as `paper` (background / non-color); palette index 1 is `ink` (default drawing color). A fill that resolves to `paper` MUST render as invisible. Bare `,f` (no `,c<n>`) defaults its fill index to `paper`, so `rt,W,H,f` and `ci,r,f` draw an outline only. Stroke and text default to `ink` when no `,c<n>` is present, so bare `dl` still draws. Grammar unchanged; interpreter unchanged; only backend colour resolution changed. Every v0.5 program is a valid v0.6 program. Motivated by real legacy pic_ex symbols (e.g. `pic_ex -1`: `rt,1224,854,f`, `rt,1222,852,f`) whose bare `,f` rectangles were being rendered as large solid black blocks under v0.5, which is not what the source HMI does.
-- **0.5 (2026-08-09).** `ci` and `rt` accept the `t` modifier as a reserved no-op. Parsers must accept; interpreters must not reject; the reference backend renders the shape identically to the same statement without `,t`. Additive; every v0.4 program is a valid v0.5 program. Motivated by real legacy pic_ex symbols (~77 occurrences in the shipped library) that use `,t` on `ci` and `rt`; rejecting them made real plans (e.g. HHY01D plan 1580) un-renderable.
-- **0.4 (2026-08-09).** `dl` opcode accepts the `i` (invisible) modifier. Semantics: pen still advances, both endpoints contribute to the bounding-box accumulator, but no visible mark is emitted. Additive; every v0.3 program is a valid v0.4 program. Motivated by real legacy pic_ex programs (≈10% of the imported library) that use invisible line moves to reserve symbol extent without visible strokes.
-- **0.3 (2026-08-09).** FLOAT type removed; the language has one numeric type, INT (signed 16-bit). `tx` and `ar` argument declarations changed from FLOAT to INT. Decimal-point literals are accepted and rounded half-toward-positive-infinity to the nearest integer (§3.4 grace clause). Backward-compatible with every real legacy program and every v0.1/v0.2 program that used only whole-degree angles.
-- **0.2 (2026-08-09).** Added line-comment syntax to §3.5. Additive; every v0.1 program is a valid v0.2 program.
-- **0.1 (2026-08-09).** Initial locked release. Seven Core opcodes, four Extension opcodes, four modifiers. No comments.
-
 Interpreters SHOULD document which version of the specification they implement. Programs MAY declare a required minimum version as an out-of-band annotation (in a database column adjacent to the cmd column); the cmd string itself does not carry a version marker.
+
+The complete revision history — every version, its release date, its scope of change, and its rationale — is collected in §17 at the end of this document.
 
 ---
 
@@ -1053,6 +1047,19 @@ An implementation is compliant with drawlang v0.6 whether or not it implements C
 Chapter 16 is v0.6.1 of the specification — an additive point release. The core language (Chapters 3–15) remains v0.6. This chapter does not introduce a new opcode, a new modifier, or any change to the grammar (Chapter 10) or the interpreter reference algorithm (Chapter 9). It is purely a data-layer addition.
 
 Future semantic-layer features (a dedicated meaning-index export format, meaning-driven queries in a semantic console, computed meaning inference from drawing shape) will each get their own additive point release. The core language stays locked.
+
+---
+
+## 17. Revision History
+
+This chapter is the single canonical record of every published version of the specification, in reverse chronological order. Each entry states the version number, its release date, the scope of change (additive, clarifying, or breaking), and the rationale.
+
+- **0.6 (2026-08-09).** Palette model made explicit in §5.4. Palette index 0 is reserved as `paper` (background / non-color); palette index 1 is `ink` (default drawing color). A fill that resolves to `paper` MUST render as invisible. Bare `,f` (no `,c<n>`) defaults its fill index to `paper`, so `rt,W,H,f` and `ci,r,f` draw an outline only. Stroke and text default to `ink` when no `,c<n>` is present, so bare `dl` still draws. Grammar unchanged; interpreter unchanged; only backend colour resolution changed. Every v0.5 program is a valid v0.6 program. Motivated by real legacy pic_ex symbols (e.g. `pic_ex -1`: `rt,1224,854,f`, `rt,1222,852,f`) whose bare `,f` rectangles were being rendered as large solid black blocks under v0.5, which is not what the source HMI does.
+- **0.5 (2026-08-09).** `ci` and `rt` accept the `t` modifier as a reserved no-op. Parsers must accept; interpreters must not reject; the reference backend renders the shape identically to the same statement without `,t`. Additive; every v0.4 program is a valid v0.5 program. Motivated by real legacy pic_ex symbols (~77 occurrences in the shipped library) that use `,t` on `ci` and `rt`; rejecting them made real plans (e.g. HHY01D plan 1580) un-renderable.
+- **0.4 (2026-08-09).** `dl` opcode accepts the `i` (invisible) modifier. Semantics: pen still advances, both endpoints contribute to the bounding-box accumulator, but no visible mark is emitted. Additive; every v0.3 program is a valid v0.4 program. Motivated by real legacy pic_ex programs (≈10% of the imported library) that use invisible line moves to reserve symbol extent without visible strokes.
+- **0.3 (2026-08-09).** FLOAT type removed; the language has one numeric type, INT (signed 16-bit). `tx` and `ar` argument declarations changed from FLOAT to INT. Decimal-point literals are accepted and rounded half-toward-positive-infinity to the nearest integer (§3.4 grace clause). Backward-compatible with every real legacy program and every v0.1/v0.2 program that used only whole-degree angles.
+- **0.2 (2026-08-09).** Added line-comment syntax to §3.5. Additive; every v0.1 program is a valid v0.2 program.
+- **0.1 (2026-08-09).** Initial locked release. Seven Core opcodes, four Extension opcodes, four modifiers. No comments.
 
 ---
 
