@@ -446,14 +446,17 @@
       font-size: 12.5px;
       color: var(--text);
       line-height: 1.55;
-      overflow-x: auto;
+      overflow: hidden;
       max-width: 100%;
       white-space: pre;
-      /* Fixed height so the block doesn't jump as lines are typed in */
-      min-height: 320px;
+      /* Fixed height so the block never grows as lines are typed in.
+         Sized for all 17 statements at line-height 1.55 * 12.5px ~= 19.4px */
+      height: 380px;
+      box-sizing: border-box;
     }
     @media (max-width: 720px) {
-      .anatomy pre.code { min-height: 260px; }
+      /* Same fixed height on mobile so the layout below doesn't shift. */
+      .anatomy pre.code { height: 380px; }
     }
     /* Blinking caret at end of the currently-typed line */
     .anatomy pre.code .cursor {
@@ -479,7 +482,9 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 160px;
+      /* Fixed height so the whole anatomy section is stable during the loop. */
+      height: 260px;
+      box-sizing: border-box;
     }
     .render-box svg { width: 100%; height: auto; max-width: 260px; display: block; }
     /* Empty state for the animation container before first paint */
