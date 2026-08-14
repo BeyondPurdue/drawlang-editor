@@ -46,6 +46,7 @@ from app import auth as _auth  # noqa: E402  (v0.8 user auth)
 from app import ownership as _ownership  # noqa: E402  (v0.8 per-user isolation)
 from app import demo_reset as _demo_reset  # noqa: E402  (v0.8 nightly demo wipe)
 from app import frames as _frames_mod  # noqa: E402  (moved up from further down)
+from app import stats as _stats  # noqa: E402  (v0.8.x access statistics)
 
 
 app = FastAPI(title="Drawing Language Editor", version=SPEC_VERSION)
@@ -73,6 +74,7 @@ def _init_storage() -> None:
     #   3. demo_reset.start() launches the nightly wipe thread.
     _auth.init()
     _ownership.apply()
+    _stats.init()
     _demo_reset.start()
     # Sweep any pre-DB filesystem drawings into the DB, once.
     legacy = Path(__file__).resolve().parent.parent / "user_drawings"
@@ -199,6 +201,42 @@ async def _auth_middleware(request: Request, call_next):
         )
     request.state.user = user
     return await call_next(request)
+
+
+@app.middleware("http")
+async def _visit_logger(request: Request, call_next):
+    """Fire-and-forget page-view logger.
+
+    Runs on every request; skips static, health, favicon, and /api/*.
+    Reads the resolved user (if any) after the auth middleware ran, then
+    offloads the actual DB write (which includes a reverse-DNS lookup)
+    to a worker thread so we never block the event loop.
+    Never raises to callers.
+    """
+    import asyncio
+    response = await call_next(request)
+    try:
+        path = request.url.path
+        method = request.method
+        if _stats.should_log(path, method):
+            user = getattr(request.state, "user", None)
+            user_id = int(user["id"]) if user else None
+            kwargs = dict(
+                path=path,
+                method=method,
+                status=response.status_code,
+                referrer=request.headers.get("referer"),
+                ua=request.headers.get("user-agent"),
+                session_cookie=request.cookies.get(_auth.COOKIE_NAME),
+                ip=_stats._client_ip(request),
+                user_id=user_id,
+            )
+            # Don't await: schedule and forget.
+            asyncio.create_task(asyncio.to_thread(_stats.log_visit, **kwargs))
+    except Exception:
+        # Never let analytics break a served page.
+        pass
+    return response
 
 
 def _require_user(request: Request) -> dict:
@@ -430,6 +468,52 @@ def logout_page(request: Request) -> RedirectResponse:
 def admin_users_page(request: Request) -> HTMLResponse:
     _require_admin(request)
     return HTMLResponse((STATIC_DIR / "admin-users.html").read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# Admin — access statistics
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/stats", response_class=HTMLResponse)
+def admin_stats_page(request: Request) -> HTMLResponse:
+    _require_admin(request)
+    return HTMLResponse((STATIC_DIR / "admin-stats.html").read_text(encoding="utf-8"))
+
+
+@app.get("/api/admin/stats/summary")
+def api_admin_stats_summary(request: Request) -> dict:
+    _require_admin(request)
+    return _stats.summary()
+
+
+@app.get("/api/admin/stats/by-day")
+def api_admin_stats_by_day(request: Request, days: int = 30) -> dict:
+    _require_admin(request)
+    return {"days": _stats.by_day(days=days)}
+
+
+@app.get("/api/admin/stats/top-pages")
+def api_admin_stats_top_pages(request: Request, limit: int = 20) -> dict:
+    _require_admin(request)
+    return {"pages": _stats.top_pages(limit=limit)}
+
+
+@app.get("/api/admin/stats/referrers")
+def api_admin_stats_referrers(request: Request, limit: int = 20) -> dict:
+    _require_admin(request)
+    return {"referrers": _stats.top_referrers(limit=limit)}
+
+
+@app.get("/api/admin/stats/countries")
+def api_admin_stats_countries(request: Request, limit: int = 30) -> dict:
+    _require_admin(request)
+    return {"countries": _stats.by_country(limit=limit)}
+
+
+@app.get("/api/admin/stats/recent")
+def api_admin_stats_recent(request: Request, limit: int = 100) -> dict:
+    _require_admin(request)
+    return {"visits": _stats.recent(limit=limit)}
 
 
 # ---------------------------------------------------------------------------

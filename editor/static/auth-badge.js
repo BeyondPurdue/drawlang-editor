@@ -32,11 +32,17 @@
     badge.appendChild(who);
 
     if (u.role === 'admin') {
+      const linkStyle = 'color:#01696f;text-decoration:none;';
       const a = document.createElement('a');
       a.href = '/admin/users';
       a.textContent = 'Users';
-      a.style.cssText = 'color:#01696f;text-decoration:none;';
+      a.style.cssText = linkStyle;
       badge.appendChild(a);
+      const b = document.createElement('a');
+      b.href = '/admin/stats';
+      b.textContent = 'Stats';
+      b.style.cssText = linkStyle;
+      badge.appendChild(b);
     }
 
     const logout = document.createElement('a');

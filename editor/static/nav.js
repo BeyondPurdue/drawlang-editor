@@ -8,6 +8,10 @@
     { href: "/frames-editor", label: "Frames" },
     { href: "/legacy", label: "DrawLang SandBox" },
   ];
+  const adminLinks = [
+    { href: "/admin/users", label: "Users" },
+    { href: "/admin/stats", label: "Stats" },
+  ];
   const here = window.location.pathname.replace(/\/$/, "") || "/canvas-editor";
   const mount = document.getElementById("app-nav");
   if (!mount) return;
@@ -33,16 +37,28 @@
   const s = document.createElement("style");
   s.textContent = style;
   document.head.appendChild(s);
-  const linksHtml = links.map((l) => {
+  const renderLink = (l) => {
     const active = here === l.href ? " active" : "";
     return `<a class="nav-link${active}" href="${l.href}">${l.label}</a>`;
-  }).join("");
+  };
+  const linksHtml = links.map(renderLink).join("");
   mount.innerHTML = `
     <div class="brand"><span class="mark">◈</span>DrawLang</div>
     ${linksHtml}
+    <span id="app-nav-admin"></span>
     <div class="spacer"></div>
     <div class="health" id="app-nav-health">…</div>
   `;
+  // Reveal admin-only links (Users, Stats) if the current user is admin.
+  fetch("/api/auth/me", { credentials: "same-origin" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => {
+      if (j && j.user && j.user.role === "admin") {
+        const slot = document.getElementById("app-nav-admin");
+        if (slot) slot.innerHTML = adminLinks.map(renderLink).join("");
+      }
+    })
+    .catch(() => {});
   // Best-effort live health indicator.
   fetch("/health").then((r) => r.json()).then((d) => {
     const el = document.getElementById("app-nav-health");
