@@ -168,7 +168,32 @@ async function renderCanvas() {
     method: "POST",
     body: JSON.stringify({}),
   });
-  $("svg-host").innerHTML = res.output;
+  // The server returns {ok:false, error, error_kind, statement_index}
+  // when a statement fails to parse or a semantic check fails. Surface
+  // that plainly — do NOT paint an empty canvas and claim success.
+  if (res && res.ok === false) {
+    const idx = res.statement_index;
+    const kind = res.error_kind || "RenderError";
+    const msg = res.error || "render failed";
+    $("svg-host").innerHTML = "";
+    state.svg = null;
+    state.svgSource = "";
+    $("stmt-status").textContent = `${kind}: ${msg}`;
+    $("stmt-status").className = "status err";
+    // If the failing statement is identifiable, scroll it into view and
+    // highlight it in the statements list so the user can see which row
+    // is broken.
+    if (typeof idx === "number") {
+      const row = document.querySelector(`.stmt-row[data-seq="${idx}"]`);
+      if (row) {
+        row.scrollIntoView({ block: "center", behavior: "smooth" });
+        row.classList.add("stmt-error");
+        setTimeout(() => row.classList.remove("stmt-error"), 4000);
+      }
+    }
+    return;
+  }
+  $("svg-host").innerHTML = res.output || "";
   const svg = $("svg-host").querySelector("svg");
   state.svg = svg;
   state.svgSource = res.output || "";
