@@ -132,6 +132,7 @@ def health() -> dict:
 # Paths that never require auth (login/register/logout pages + auth API +
 # static + health). Everything else requires an active session.
 _PUBLIC_PATHS = {
+    "/",           # public landing (index() serves login.html when signed out)
     "/health",
     "/login",
     "/register",
@@ -540,9 +541,18 @@ class RenderResponse(BaseModel):
 
 
 @app.get("/", response_class=HTMLResponse)
-def index() -> HTMLResponse:
-    # Canvas editor is the default landing page. Old v0.1 index lives at /legacy.
-    return HTMLResponse((STATIC_DIR / "canvas-editor.html").read_text(encoding="utf-8"))
+def index(request: Request) -> HTMLResponse:
+    # Signed-in users go straight into the canvas editor. Signed-out
+    # visitors see the public landing page (login.html) instead of being
+    # bounced through /login?next=/ — this is what people from Reddit,
+    # LinkedIn, and drawlang.com root land on.
+    try:
+        user = _auth.current_user(request)
+    except Exception:
+        user = None
+    if user:
+        return HTMLResponse((STATIC_DIR / "canvas-editor.html").read_text(encoding="utf-8"))
+    return HTMLResponse((STATIC_DIR / "login.html").read_text(encoding="utf-8"))
 
 
 @app.get("/legacy", response_class=HTMLResponse)

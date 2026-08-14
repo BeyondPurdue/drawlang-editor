@@ -56,6 +56,69 @@
     }
 
     /* ------------------------------------------------------------------ */
+    /* Site header — sticky top strip                                     */
+    /* ------------------------------------------------------------------ */
+    .site-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+    .site-header-inner {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 12px 32px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    @media (max-width: 860px) {
+      .site-header-inner { padding: 10px 16px; gap: 14px; flex-wrap: wrap; }
+    }
+    .site-header .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 15px;
+    }
+    .site-header .brand-mark {
+      color: var(--accent);
+      font-size: 18px;
+    }
+    .site-header .brand-sub {
+      color: var(--muted);
+      font-weight: 400;
+      font-size: 13px;
+      margin-left: 4px;
+    }
+    @media (max-width: 620px) {
+      .site-header .brand-sub { display: none; }
+    }
+    .site-header nav {
+      display: flex;
+      gap: 18px;
+      margin-left: auto;
+      align-items: center;
+      font-size: 14px;
+    }
+    .site-header nav a {
+      color: var(--muted);
+      text-decoration: none;
+    }
+    .site-header nav a:hover { color: var(--accent); }
+    .site-header nav a.cta {
+      background: var(--accent);
+      color: #fff;
+      padding: 6px 14px;
+      border-radius: 6px;
+    }
+    .site-header nav a.cta:hover { background: var(--accent-2); }
+
+    /* ------------------------------------------------------------------ */
     /* Demo strip — full width above the two columns                       */
     /* ------------------------------------------------------------------ */
     .demo-strip {
@@ -127,30 +190,17 @@
       position: relative;
       width: 100%;
       aspect-ratio: 16 / 9;
-      background: var(--code-bg);
-      border: 1px dashed var(--border);
+      background: #000;
+      border: 1px solid var(--border);
       border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--muted);
-      font-size: 13px;
-      text-align: center;
-      padding: 10px;
+      overflow: hidden;
     }
-    .demo-video::before {
-      content: "▶";
+    .demo-video iframe {
       position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -140%);
-      font-size: 22px;
-      color: var(--faint);
-      line-height: 1;
-    }
-    .demo-video span {
-      margin-top: 28px;
-      display: block;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
     }
 
     /* ------------------------------------------------------------------ */
@@ -596,6 +646,22 @@
   </style>
 </head>
 <body>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">◈</span>
+        DrawLang
+        <span class="brand-sub">· a small language for control-system drawings</span>
+      </a>
+      <nav aria-label="Site">
+        <a href="https://github.com/BeyondPurdue/drawlang-editor/wiki" target="_blank" rel="noopener">Wiki</a>
+        <a href="https://github.com/BeyondPurdue/drawlang-editor/blob/main/docs/spec/drawing-language-spec.md" target="_blank" rel="noopener">Spec</a>
+        <a href="https://www.reddit.com/r/drawlang/" target="_blank" rel="noopener">r/drawlang</a>
+        <a href="https://github.com/BeyondPurdue/drawlang-editor" target="_blank" rel="noopener">GitHub</a>
+        <a class="cta" href="#signin">Sign in →</a>
+      </nav>
+    </div>
+  </header>
   <div class="shell">
 
     <!-- ============================================================ -->
@@ -619,8 +685,14 @@
              target="_blank" rel="noopener">Language spec</a>
         </div>
       </div>
-      <div class="demo-video" aria-label="Demo video placeholder">
-        <span>Demo video coming soon</span>
+      <div class="demo-video">
+        <iframe
+          src="https://www.youtube.com/embed/VV3IseKq68Y?rel=0&modestbranding=1"
+          title="DrawLang demo"
+          frameborder="0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          referrerpolicy="strict-origin-when-cross-origin"
+          allowfullscreen></iframe>
       </div>
     </section>
 
@@ -778,7 +850,7 @@ tx,0.,A1;</pre>
     <!-- ============================================================ -->
     <!-- SIGN-IN COLUMN                                                -->
     <!-- ============================================================ -->
-    <section class="auth-col" aria-label="Sign in">
+    <section class="auth-col" aria-label="Sign in" id="signin">
       <div class="auth-wrap">
         <h1>Sign in</h1>
         <p class="sub">Access your DrawLang editor account.</p>

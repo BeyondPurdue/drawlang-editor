@@ -45,6 +45,7 @@ CHANGED_FILES="$(sudo -u www-data git diff --name-only "${LOCAL}" "${REMOTE}")"
 
 NEEDS_PIP_INSTALL=0
 NEEDS_UNIT_RELOAD=0
+NEEDS_CADDY_RELOAD=0
 
 if echo "${CHANGED_FILES}" | grep -qE '^(pyproject\.toml|requirements.*\.txt)$'; then
     NEEDS_PIP_INSTALL=1
@@ -54,6 +55,11 @@ fi
 if echo "${CHANGED_FILES}" | grep -qE '^deploy/.*\.(service|timer)$'; then
     NEEDS_UNIT_RELOAD=1
     log "systemd unit changed — will reload daemon"
+fi
+
+if echo "${CHANGED_FILES}" | grep -qE '^deploy/Caddyfile$'; then
+    NEEDS_CADDY_RELOAD=1
+    log "Caddyfile changed — will copy + reload caddy"
 fi
 
 # 3. Fast-forward pull -------------------------------------------------------
@@ -76,6 +82,16 @@ if [ "${NEEDS_UNIT_RELOAD}" -eq 1 ]; then
     done
     systemctl daemon-reload
     log "systemd daemon-reload completed"
+fi
+
+# 5b. Reload Caddy if its config changed -------------------------------------
+if [ "${NEEDS_CADDY_RELOAD}" -eq 1 ] && [ -f "${APP_DIR}/deploy/Caddyfile" ]; then
+    cp "${APP_DIR}/deploy/Caddyfile" /etc/caddy/Caddyfile
+    if systemctl reload caddy; then
+        log "caddy reloaded with new config"
+    else
+        log "WARN: caddy reload failed — config may be invalid"
+    fi
 fi
 
 # 6. Restart the editor service ----------------------------------------------
