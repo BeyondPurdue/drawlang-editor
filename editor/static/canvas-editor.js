@@ -170,19 +170,16 @@ async function renderCanvas() {
   });
   // The server returns {ok:false, error, error_kind, statement_index}
   // when a statement fails to parse or a semantic check fails. Surface
-  // that plainly — do NOT paint an empty canvas and claim success.
+  // that in the status line, but LEAVE the previously-rendered SVG in
+  // place so the canvas stays clickable and the user doesn't lose their
+  // place. (Wiping the SVG on error breaks all click/select handlers
+  // because state.svg is set to null.)
   if (res && res.ok === false) {
     const idx = res.statement_index;
     const kind = res.error_kind || "RenderError";
     const msg = res.error || "render failed";
-    $("svg-host").innerHTML = "";
-    state.svg = null;
-    state.svgSource = "";
     $("stmt-status").textContent = `${kind}: ${msg}`;
     $("stmt-status").className = "status err";
-    // If the failing statement is identifiable, scroll it into view and
-    // highlight it in the statements list so the user can see which row
-    // is broken.
     if (typeof idx === "number") {
       const row = document.querySelector(`.stmt-row[data-seq="${idx}"]`);
       if (row) {
