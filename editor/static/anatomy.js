@@ -64,36 +64,60 @@
   // need to flip Y again inside the badge to render text upright.
   const BADGE_FONT_SIZE = 5;
 
-  // Pencil sprite drawn in DrawLang-space around origin, tip at (0,0).
-  // Points UP-RIGHT so `+dx, +dy` lands the tip where we say it does.
-  // The sprite is drawn as a small SVG group. It's designed at native
-  // stroke width — vector-effect:non-scaling-stroke keeps outlines crisp.
+  // Pencil sprite — option B: short stubby pencil.
+  //
+  // Designed in local screen-space (y-down) with the graphite tip at (0,0).
+  // The whole scene is rendered inside `<g transform="scale(1 -1)">`, so we
+  // wrap the sprite in an inner `scale(1 -1)` to flip it back upright.
+  // The pencil is drawn horizontally pointing LEFT (tip at 0, body extending
+  // to the right) and then rotated -30° so it tilts up like someone writing.
+  //
+  // Anatomy, tip to eraser: graphite → wood cone → yellow shaft with two
+  // shading strips → silver ferrule with 2 pinstripes → pink eraser.
   function penSprite() {
+    // Sprite scale in DrawLang units. The design below is measured for the
+    // shaft to span ~34u; PEN_SCALE * 34 is roughly how many DrawLang units
+    // of screen the pencil covers along its length. 0.55 = ~19u long, which
+    // is small enough to sit next to shapes without covering them.
+    const S = 0.55;
     return [
-      '<g class="anatomy-pen">',
-      // Wood shaft
-      '<polygon points="0,0 3,3 12,12 15,9 12,6" ',
-      'fill="#f4c76a" stroke="#8a6a1e" stroke-width="0.6" />',
-      // Ferrule (metal band)
-      '<polygon points="12,6 15,9 17,7 14,4" ',
-      'fill="#c8c8c8" stroke="#666" stroke-width="0.4" />',
-      // Eraser
-      '<polygon points="14,4 17,7 19,5 16,2" ',
-      'fill="#e07a7a" stroke="#8a3838" stroke-width="0.4" />',
-      // Tip highlight
-      '<polygon points="0,0 3,3 4,2 1,-1" fill="#2a2a2a" />',
-      // Tiny dot at the exact tip (so the eye knows where the mark lands)
-      '<circle cx="0" cy="0" r="0.9" fill="#01696f" />',
-      '</g>'
+      '<g class="anatomy-pen" transform="scale(1 -1)">',
+      '<g transform="scale(' + S + ') rotate(-30)">',
+      // Wood cone (behind the graphite)
+      '<polygon points="0,0 8,-2.5 8,2.5" ',
+      'fill="#e8c48a" stroke="#8a6a3a" stroke-width="0.4" />',
+      // Graphite tip (dark)
+      '<polygon points="0,0 2.4,-0.8 2.4,0.8" fill="#2a2a2a" />',
+      // Yellow shaft
+      '<rect x="8" y="-3" width="34" height="6" ',
+      'fill="#f4c94a" stroke="#a67f11" stroke-width="0.35" />',
+      // Upper shading strip (lighter)
+      '<rect x="8" y="-3" width="34" height="1.2" fill="#f9dc7e" opacity="0.85" />',
+      // Lower shading strip (darker)
+      '<rect x="8" y="1.8" width="34" height="1.2" fill="#c99a1a" opacity="0.55" />',
+      // Silver ferrule
+      '<rect x="42" y="-3.4" width="6" height="6.8" ',
+      'fill="#c9c9c9" stroke="#6d6d6d" stroke-width="0.35" />',
+      // Ferrule pinstripes
+      '<line x1="44" y1="-3.4" x2="44" y2="3.4" stroke="#6d6d6d" stroke-width="0.25" />',
+      '<line x1="46" y1="-3.4" x2="46" y2="3.4" stroke="#6d6d6d" stroke-width="0.25" />',
+      // Pink eraser
+      '<rect x="48" y="-3" width="4" height="6" rx="0.8" ',
+      'fill="#f2a3a3" stroke="#a35555" stroke-width="0.35" />',
+      '</g>',
+      '</g>',
+      // Tiny teal dot at the exact tip — this is where the mark lands.
+      // Drawn OUTSIDE the sprite's local flip so it stays anchored.
+      '<circle cx="0" cy="0" r="0.9" fill="#01696f" />'
     ].join('');
   }
 
   // Coordinate badge: rounded rect + text, positioned relative to the pen
-  // tip. `x,y` are DrawLang-space. Offset by (+6, +14) so it sits above
-  // and to the right of the pen sprite.
+  // tip. `x,y` are DrawLang-space. The pencil extends up-right of the tip
+  // (rotated -30°), so the badge sits BELOW and to the right to stay clear.
   function badge(x, y) {
-    const dx = 6;
-    const dy = 14;
+    const dx = 4;
+    const dy = -8;
     const label = 'x=' + Math.round(x) + '  y=' + Math.round(y);
     // Pill width sized so the monospace label fits with breathing room.
     // Empirical: at font-size 5, each char is ~3.0 units wide.
