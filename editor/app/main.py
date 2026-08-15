@@ -518,6 +518,81 @@ def api_admin_stats_recent(request: Request, limit: int = 100) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Experiments — /experiments/demo-sync
+# ---------------------------------------------------------------------------
+#
+# Standalone "how it works" page that visualises the nightly demo sync.
+# Admin-only. Shows the source → demo copy flow, when it last ran, what
+# lives in each account, and offers a manual "reset now" button.
+
+@app.get("/experiments/demo-sync", response_class=HTMLResponse)
+def experiments_demo_sync_page(request: Request) -> HTMLResponse:
+    _require_admin(request)
+    return HTMLResponse(
+        (STATIC_DIR / "experiments-demo-sync.html").read_text(encoding="utf-8")
+    )
+
+
+@app.get("/api/experiments/demo-sync/status")
+def api_experiments_demo_sync_status(request: Request) -> dict:
+    """Return the current state of the demo/source pair: user rows,
+    canvas + library counts on both sides, last-reset info, and the
+    next scheduled reset time.
+    """
+    _require_admin(request)
+    demo_id = _auth.demo_user_id()
+    source_id = _auth.demo_source_user_id()
+    demo_user = _auth.get_user_by_id(demo_id)
+    source_user = _auth.get_user_by_id(source_id) if source_id else None
+
+    def _summarise(uid: int | None) -> dict:
+        if uid is None:
+            return {"canvases": [], "n_library": 0}
+        canvases = _canvases.list_canvases(owner_id=uid)
+        try:
+            lib = _library.list_items(owner_id=uid)
+            # Filter out shared-owned (owner_id IS NULL) rows.
+            lib = [i for i in lib if i.get("owner_id") == uid]
+        except Exception:
+            lib = []
+        return {
+            "canvases": [
+                {
+                    "slug": c.get("slug"),
+                    "name": c.get("name"),
+                    "updated_at": c.get("updated_at"),
+                    "statement_count": c.get("statement_count"),
+                }
+                for c in canvases
+            ],
+            "n_library": len(lib),
+        }
+
+    next_reset_seconds = _demo_reset._seconds_until_next_midnight()
+    return {
+        "demo": {
+            "user": _auth._public_user(demo_user) if demo_user else None,
+            **_summarise(demo_id),
+        },
+        "source": {
+            "email": _auth.DEMO_SOURCE_EMAIL,
+            "user": _auth._public_user(source_user) if source_user else None,
+            **_summarise(source_id),
+        },
+        "last_reset": _demo_reset.last_reset(),
+        "next_reset_seconds": next_reset_seconds,
+        "timezone": "Europe/Madrid",
+    }
+
+
+@app.post("/api/experiments/demo-sync/reset-now")
+def api_experiments_demo_sync_reset_now(request: Request) -> dict:
+    """Fire a manual demo reset. Admin only."""
+    _require_admin(request)
+    return _demo_reset.reset_now()
+
+
+# ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
 

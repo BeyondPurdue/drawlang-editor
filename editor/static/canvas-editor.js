@@ -1603,6 +1603,40 @@ $("dup-canvas-btn").addEventListener("click", async () => {
   }
 });
 
+// v0.8 file management: Delete the current canvas. Confirms first, then
+// hits DELETE /api/canvases/{slug}. On success reloads the canvas list
+// and clears the current view. Admins can delete anyone's canvas; regular
+// users can delete only their own (enforced server-side).
+$("del-canvas-btn").addEventListener("click", async () => {
+  if (!state.currentCanvas) { alert("Choose a canvas to delete first"); return; }
+  const slug = state.currentCanvas;
+  const msg =
+    `Delete canvas "${slug}"?\n\n` +
+    `All statements and history for this canvas will be permanently removed.\n` +
+    `This cannot be undone.`;
+  if (!confirm(msg)) return;
+  try {
+    const res = await fetch(`/api/canvases/${encodeURIComponent(slug)}`, {
+      method: "DELETE",
+      credentials: "same-origin",
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    state.currentCanvas = null;
+    await refreshCanvasList();
+    $("canvas-select").value = "";
+    // Reset the visible editor. loadCanvas("") isn't guaranteed to
+    // clear everything, so just reload the page — cheap and safe.
+    if (typeof location !== "undefined") {
+      const u = new URL(location.href);
+      u.searchParams.delete("slug");
+      u.searchParams.delete("canvas");
+      location.href = u.pathname + (u.search ? u.search : "");
+    }
+  } catch (e) {
+    alert("Delete failed: " + e.message);
+  }
+});
+
 // --------------------------------------------------------------------------
 // Library
 // --------------------------------------------------------------------------

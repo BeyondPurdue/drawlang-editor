@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Demo sync — DrawLang Editor Experiment</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/app.css">
+  <style>
+    /* app.css locks html/body for the canvas editor. This is a normal
+       scrollable document — undo it. */
+    html, body { height: auto; overflow-x: hidden; overflow-y: auto; }
+    body { background:#f7f6f2; color:#28251d;
+           font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+           margin:0; }
+    .wrap { max-width:1100px; margin:24px auto 60px; padding:0 24px; }
+    header { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:8px; }
+    header h1 { margin:0; font-size:22px; font-weight:600; }
+    header .subtitle { font-size:13px; color:#7a7974; margin-bottom:20px; }
+    .lede { color:#7a7974; font-size:13px; margin:0 0 24px; max-width:720px; line-height:1.55; }
+    .experiment-badge { display:inline-block; padding:2px 8px; margin-left:8px;
+                        background:#fff4e0; color:#964219; border-radius:999px;
+                        font-size:11px; letter-spacing:.4px; text-transform:uppercase; }
+    section { background:#fff; border:1px solid #d4d1ca; border-radius:8px;
+              padding:20px; margin-bottom:20px; }
+    section h2 { margin:0 0 4px; font-size:15px; font-weight:600; }
+    section .sec-hint { font-size:12px; color:#7a7974; margin:0 0 16px; }
+
+    /* --- architecture diagram --- */
+    .diagram { display:grid; grid-template-columns: 1fr 60px 1fr;
+               align-items:stretch; gap:0; margin:8px 0 4px; }
+    .diagram .node { border:1.5px solid #01696f; border-radius:8px;
+                     padding:14px 16px; background:#f9f8f5; min-height:120px;
+                     display:flex; flex-direction:column; justify-content:center; }
+    .diagram .node.demo { border-color:#7a39bb; background:#f5efff; }
+    .diagram .node .role { font-size:11px; text-transform:uppercase; letter-spacing:.5px;
+                           color:#7a7974; margin:0 0 4px; }
+    .diagram .node .who  { font-size:15px; font-weight:600; color:#28251d;
+                           font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .diagram .node .desc { font-size:12px; color:#7a7974; margin-top:6px; line-height:1.45; }
+    .diagram .arrow { position:relative; display:flex; flex-direction:column;
+                      align-items:center; justify-content:center; }
+    .diagram .arrow svg { width:60px; height:36px; }
+    .diagram .arrow .arrow-label { font-size:11px; color:#01696f; margin-top:4px;
+                                   text-align:center; line-height:1.35; }
+    .diagram-caption { font-size:12px; color:#7a7974; margin-top:14px; line-height:1.55; }
+
+    /* --- reset row --- */
+    .reset-row { display:flex; align-items:center; gap:16px;
+                 padding:12px 14px; background:#f9f8f5; border-radius:6px;
+                 margin-top:16px; flex-wrap:wrap; }
+    .reset-row .item { display:flex; flex-direction:column; }
+    .reset-row .item .label { font-size:11px; color:#7a7974;
+                              text-transform:uppercase; letter-spacing:.4px; }
+    .reset-row .item .val { font-size:14px; color:#28251d;
+                            font-variant-numeric:tabular-nums; margin-top:2px; }
+    .reset-row .val.mode-copy_from_source { color:#437a22; font-weight:500; }
+    .reset-row .val.mode-fallback_seed    { color:#964219; font-weight:500; }
+    .reset-row .val.mode-none             { color:#7a7974; font-style:italic; }
+    .reset-row .spacer { flex:1; }
+    .reset-row button { font-size:13px; padding:8px 14px; border-radius:6px;
+                        border:1px solid #01696f; background:#01696f; color:#fff;
+                        cursor:pointer; }
+    .reset-row button:hover { opacity:.9; }
+    .reset-row button:disabled { opacity:.5; cursor:not-allowed; }
+
+    /* --- account panes --- */
+    .panes { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+    .pane h3 { margin:0 0 4px; font-size:14px; font-weight:600; }
+    .pane .pane-who { font-size:12px; color:#7a7974; margin:0 0 10px;
+                      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .pane ul { list-style:none; padding:0; margin:0; }
+    .pane li { display:flex; align-items:center; gap:8px; padding:6px 8px;
+               border-bottom:1px solid #f0eeea; font-size:13px; }
+    .pane li:last-child { border-bottom:none; }
+    .pane li .name { flex:1; }
+    .pane li .name .slug { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+                           color:#7a7974; font-size:11px; margin-left:6px; }
+    .pane li .count { font-size:11px; color:#7a7974;
+                      font-variant-numeric:tabular-nums; }
+    .pane .empty { color:#7a7974; font-style:italic; padding:12px 0; font-size:13px; }
+    .pane .lib-note { font-size:11px; color:#7a7974; margin-top:10px; font-style:italic; }
+
+    /* --- previews --- */
+    .previews { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+                gap:16px; margin-top:12px; }
+    .thumb { border:1px solid #d4d1ca; border-radius:6px; overflow:hidden;
+             background:#fbfbf9; display:flex; flex-direction:column; }
+    .thumb .thumb-svg { flex:1; padding:8px; min-height:160px;
+                         display:flex; align-items:center; justify-content:center; }
+    .thumb .thumb-svg svg { max-width:100%; max-height:220px; height:auto; }
+    .thumb .thumb-label { padding:8px 10px; border-top:1px solid #ece9e2;
+                          background:#fff; }
+    .thumb .thumb-label .name { font-size:12px; font-weight:500; color:#28251d;
+                                 display:block; overflow:hidden;
+                                 text-overflow:ellipsis; white-space:nowrap; }
+    .thumb .thumb-label .slug { font-size:10px; color:#7a7974;
+                                 font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .thumb .thumb-err { padding:14px; font-size:11px; color:#a12c7b;
+                        font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+
+    #toast { position:fixed; bottom:20px; right:20px; background:#28251d;
+             color:#fbfbf9; padding:10px 14px; border-radius:6px;
+             font-size:13px; opacity:0; transition:opacity .2s; z-index:100; }
+    #toast.show { opacity:1; }
+  </style>
+  <script src="/static/nav.js" defer></script>
+</head>
+<body>
+<div id="app-nav"></div>
+<div class="wrap">
+  <header>
+    <h1>Demo sync <span class="experiment-badge">experiment</span></h1>
+  </header>
+  <p class="lede">
+    Every night at midnight Europe/Madrid, the <code>demo</code> account is wiped
+    and reseeded from <code id="src-email">drawlang@bohemiamarket.com</code>.
+    Signing in as <code>demo</code>/<code>demo</code> shows the current copy of
+    that account's canvases. Anything anyone does inside the demo account is
+    thrown away at midnight — that's why we can hand it out publicly without
+    losing the curated showcase.
+  </p>
+
+  <section>
+    <h2>How it works</h2>
+    <p class="sec-hint">Source account (real, editable) → nightly copy job → demo account (wiped and reseeded).</p>
+    <div class="diagram">
+      <div class="node source">
+        <div class="role">Source · editable</div>
+        <div class="who" id="src-email-2">drawlang@bohemiamarket.com</div>
+        <div class="desc">
+          A regular user account. Log in, curate the showcase canvases
+          (data diode, AND-gate, FUP, SLD, P&amp;ID, RTU, frame examples),
+          then leave.
+        </div>
+      </div>
+      <div class="arrow">
+        <svg viewBox="0 0 60 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M4 18 L52 18" stroke="#01696f" stroke-width="1.6" />
+          <path d="M46 12 L54 18 L46 24" stroke="#01696f" stroke-width="1.6" fill="none" />
+        </svg>
+        <div class="arrow-label">nightly copy<br>00:00 Madrid</div>
+      </div>
+      <div class="node demo">
+        <div class="role">Demo · wiped nightly</div>
+        <div class="who">demo</div>
+        <div class="desc">
+          Shared account (password <code>demo</code>). Everything owned by
+          demo is deleted, then every canvas above is deep-copied in.
+          Visitors get a fresh sandbox every day.
+        </div>
+      </div>
+    </div>
+    <p class="diagram-caption">
+      The copy is deep: canvas rows, all statements, field values, and frame
+      bindings are duplicated so slugs and URLs remain stable
+      (<code>/canvas-editor?slug=…</code> works the next morning). If the source
+      account is empty for any reason, the reset falls back to a minimal
+      hardcoded seed so the demo login is never broken.
+    </p>
+
+    <div class="reset-row">
+      <div class="item"><span class="label">Last reset</span><span class="val" id="last-at">—</span></div>
+      <div class="item"><span class="label">Mode</span><span class="val mode-none" id="last-mode">never run this boot</span></div>
+      <div class="item"><span class="label">Wiped</span><span class="val" id="last-wiped">—</span></div>
+      <div class="item"><span class="label">Seeded</span><span class="val" id="last-seeded">—</span></div>
+      <div class="item"><span class="label">Next reset in</span><span class="val" id="next-in">—</span></div>
+      <div class="spacer"></div>
+      <button id="reset-btn" title="Wipe the demo account and reseed from the source account, right now">Reset now</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Curating the showcase</h2>
+    <p class="sec-hint">The nightly job copies whatever lives on the source account — there is no fabricated seed.</p>
+    <ol style="margin:0; padding-left:20px; font-size:13px; line-height:1.7; color:#28251d;">
+      <li>Sign out of admin. Sign in as the source account (email shown above).</li>
+      <li>Build the showcase canvases you want visitors to see — data diode, AND-gate, FUP page, single-line diagram, P&amp;ID, secure RTU, A3 frame, etc. Anything you’d be proud to show to a stranger.</li>
+      <li>Sign back in as admin and hit <b>Reset now</b> below. The demo account is wiped and reseeded from the source in a single transaction.</li>
+      <li>From that moment onwards, the same reset runs automatically every night at 00:00 Europe/Madrid.</li>
+    </ol>
+    <p class="sec-hint" style="margin-top:12px;">Safety net: if the source account is empty for any reason, the reset falls back to a minimal hardcoded seed so <code>demo</code>/<code>demo</code> is never a dead login.</p>
+  </section>
+
+  <section>
+    <h2>Accounts</h2>
+    <p class="sec-hint">What's currently owned by each side of the pair.</p>
+    <div class="panes">
+      <div class="pane" id="pane-source">
+        <h3>Source</h3>
+        <div class="pane-who" id="src-who">…</div>
+        <ul id="src-canvases"><li class="empty">Loading…</li></ul>
+        <div class="lib-note" id="src-lib">—</div>
+      </div>
+      <div class="pane" id="pane-demo">
+        <h3>Demo</h3>
+        <div class="pane-who" id="demo-who">demo</div>
+        <ul id="demo-canvases"><li class="empty">Loading…</li></ul>
+        <div class="lib-note" id="demo-lib">—</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Live preview of the showcase</h2>
+    <p class="sec-hint">Rendered directly from the source account so you can see what visitors will see after the next reset.</p>
+    <div class="previews" id="previews"><div class="empty">Loading…</div></div>
+  </section>
+</div>
+
+<div id="toast"></div>
+<script src="/static/experiments-demo-sync.js" defer></script>
+</body>
+</html>

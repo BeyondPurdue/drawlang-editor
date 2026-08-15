@@ -43,6 +43,12 @@
       b.textContent = 'Stats';
       b.style.cssText = linkStyle;
       badge.appendChild(b);
+      const d = document.createElement('a');
+      d.href = '/experiments/demo-sync';
+      d.textContent = 'Demo sync';
+      d.title = 'How the nightly demo-account sync works';
+      d.style.cssText = linkStyle;
+      badge.appendChild(d);
     }
 
     const logout = document.createElement('a');

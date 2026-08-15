@@ -11,6 +11,7 @@
   const adminLinks = [
     { href: "/admin/users", label: "Users" },
     { href: "/admin/stats", label: "Stats" },
+    { href: "/experiments/demo-sync", label: "Demo sync" },
   ];
   const here = window.location.pathname.replace(/\/$/, "") || "/canvas-editor";
   const mount = document.getElementById("app-nav");

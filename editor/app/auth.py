@@ -102,6 +102,20 @@ DEMO_EMAIL = "demo"
 DEMO_PASSWORD = "demo"
 DEMO_DISPLAY = "Demo user"
 
+# The demo *source* user. This is a real, editable account. Every night
+# the demo user is wiped and reseeded from this account's canvases, so
+# whatever we curate here becomes the demo tour. Editing this account
+# is the only supported way to change the demo content.
+DEMO_SOURCE_EMAIL = os.environ.get(
+    "DRAWLANG_DEMO_SOURCE_EMAIL", "drawlang@bohemiamarket.com"
+)
+DEMO_SOURCE_DISPLAY = "Demo source"
+# Password is only used if the account has to be created on first boot.
+# Change it after first login. Not shown anywhere in the UI.
+DEMO_SOURCE_PASSWORD = os.environ.get(
+    "DRAWLANG_DEMO_SOURCE_PASSWORD", "changeme-please"
+)
+
 # Cookie lifetime.
 SESSION_TTL_SECONDS = 30 * 24 * 3600
 
@@ -185,6 +199,22 @@ def _seed_admin_and_demo() -> None:
                 "reason, created_at, updated_at) VALUES (?, ?, ?, 'demo', 'active', '', ?, ?)",
                 (DEMO_EMAIL, DEMO_DISPLAY, hash_password(DEMO_PASSWORD), now, now),
             )
+        # Demo *source* user — a real editable account whose canvases are
+        # copied into `demo` every midnight. Role='user', status='active'
+        # so the admin can sign in as this account, curate the showcase,
+        # and let the nightly job pick up the changes.
+        row = c.execute(
+            "SELECT id FROM users WHERE email = ?", (DEMO_SOURCE_EMAIL,)
+        ).fetchone()
+        if row is None:
+            c.execute(
+                "INSERT INTO users (email, display_name, password_hash, role, status, "
+                "reason, created_at, updated_at) VALUES (?, ?, ?, 'user', 'active', '', ?, ?)",
+                (
+                    DEMO_SOURCE_EMAIL, DEMO_SOURCE_DISPLAY,
+                    hash_password(DEMO_SOURCE_PASSWORD), now, now,
+                ),
+            )
         # Admin
         row = c.execute(
             "SELECT id FROM users WHERE email = ?", (INITIAL_ADMIN_EMAIL,)
@@ -260,6 +290,17 @@ def demo_user_id() -> int:
     if row is None:
         raise RuntimeError("demo user missing — auth.init() not called?")
     return int(row[0])
+
+
+def demo_source_user_id() -> int | None:
+    """Return the id of the demo source account, or None if it doesn't
+    exist yet. Kept nullable because a fresh deploy may not have seeded
+    it yet when the reset scheduler first probes it.
+    """
+    row = _conn().execute(
+        "SELECT id FROM users WHERE email = ?", (DEMO_SOURCE_EMAIL,)
+    ).fetchone()
+    return int(row[0]) if row else None
 
 
 def register(email: str, display_name: str, password: str, reason: str = "") -> dict[str, Any]:
@@ -466,6 +507,8 @@ __all__ = [
     "register", "authenticate", "get_user_by_id", "get_user_by_email",
     "list_pending", "list_all_users",
     "approve_user", "disable_user", "delete_user", "demo_user_id",
+    "demo_source_user_id",
+    "DEMO_SOURCE_EMAIL", "DEMO_SOURCE_DISPLAY",
     "create_session", "get_session_user", "destroy_session", "cleanup_expired_sessions",
     "current_user", "is_active", "is_admin", "_public_user",
     "COOKIE_NAME", "SESSION_TTL_SECONDS",
