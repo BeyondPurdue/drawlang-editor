@@ -1882,19 +1882,44 @@ document.addEventListener("keydown", (e) => {
 });
 
 // v0.7.5: arrow keys nudge the current selection by 1 paper unit (mm).
-// Shift+Arrow = 10 units. Ignore when a form control has focus.
+// Shift+Arrow = 10 units. Backspace / Delete removes the selection.
+// Ignore when a form control has focus, or when the row handler at line 750
+// has already taken the key (that one requires a .stmt-row to be focused).
+// DrawLang is y-up (mathematical convention): ArrowUp = +y, ArrowDown = -y.
 document.addEventListener("keydown", (e) => {
   const tag = (e.target && e.target.tagName || "").toLowerCase();
   if (tag === "input" || tag === "textarea" || tag === "select" ||
       (e.target && e.target.isContentEditable)) return;
+  // Don't fight the stmt-row handler above.
+  const active = document.activeElement;
+  if (active && active.classList && active.classList.contains("stmt-row")) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (!state.selectedIds || !state.selectedIds.size) return;
+
+  // Backspace / Delete: same code path as the toolbar's Delete button.
+  if (e.key === "Backspace" || e.key === "Delete") {
+    e.preventDefault();
+    (async () => {
+      const ids = [...state.selectedIds];
+      try {
+        for (const id of ids) {
+          await api(`/api/canvases/${state.currentCanvas}/statements/${id}`, { method: "DELETE" });
+        }
+        state.selectedIds = new Set();
+        await reloadStatements();
+      } catch (err) {
+        alert("Delete failed: " + err.message);
+      }
+    })();
+    return;
+  }
+
   const step = e.shiftKey ? 10 : 1;
   let dx = 0, dy = 0;
   if (e.key === "ArrowLeft")       dx = -step;
   else if (e.key === "ArrowRight") dx =  step;
-  else if (e.key === "ArrowUp")    dy = -step;
-  else if (e.key === "ArrowDown")  dy =  step;
+  else if (e.key === "ArrowUp")    dy =  step;   // y-up: up increases y
+  else if (e.key === "ArrowDown")  dy = -step;   // y-up: down decreases y
   else return;
   e.preventDefault();
   nudgeSelection(dx, dy);
