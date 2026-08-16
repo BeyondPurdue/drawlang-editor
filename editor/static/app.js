@@ -317,6 +317,26 @@ async function exportPDF() {
   }
 }
 
+async function exportDXF() {
+  setStatus("busy", "Generating DXF…");
+  try {
+    const r = await fetch(api("/export/dxf"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ program: editor.value }),
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      setStatus("error", `DXF export failed: ${t}`);
+      return;
+    }
+    downloadBlob(await r.blob(), "drawing.dxf");
+    setStatus("ok", "DXF exported.");
+  } catch (err) {
+    setStatus("error", `DXF export error: ${err.message}`);
+  }
+}
+
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -356,6 +376,8 @@ $("render-btn").addEventListener("click", () => renderProgram());
 $("save-btn").addEventListener("click", saveDrawing);
 $("export-svg").addEventListener("click", exportSVG);
 $("export-pdf").addEventListener("click", exportPDF);
+const _dxfBtnLegacy = document.getElementById("export-dxf");
+if (_dxfBtnLegacy) _dxfBtnLegacy.addEventListener("click", exportDXF);
 
 // v0.7: Export DrawLang — dump the current editor text as a .drawlang file
 // so the user can save/load their scratch work without going through the
