@@ -214,6 +214,8 @@ async function onSelectFrame(fid) {
   document.getElementById('frame-body').style.display = 'flex';
   document.getElementById('frame-body').style.flexDirection = 'column';
   document.getElementById('delete-frame-btn').disabled = false;
+  document.getElementById('export-frame-btn').disabled = false;
+  document.getElementById('send-frame-btn').disabled = false;
   setStatus('Loading frame…');
   try {
     const data = await apiGet(`/api/frames/${encodeURIComponent(fid)}/raw`);
@@ -827,6 +829,77 @@ async function newFrame() {
   }
 }
 
+async function exportFrame() {
+  if (!state.frameId) return;
+  // Server sets the Content-Disposition filename; hit it via a hidden <a>.
+  const a = document.createElement('a');
+  a.href = `/api/frames/${encodeURIComponent(state.frameId)}/export`;
+  a.download = `${state.frameId}.drawlang`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setStatus('Exported.', 'success');
+  setTimeout(() => setStatus(''), 1500);
+}
+
+async function sendFrameToUser() {
+  if (!state.frameId) return;
+  const email = window.prompt(
+    `Send a copy of "${state.frameId}" to which user? (enter their email)`
+  );
+  if (!email) return;
+  const clean = email.trim();
+  if (!clean) return;
+  try {
+    setStatus('Sending…');
+    const res = await fetch(
+      `/api/frames/${encodeURIComponent(state.frameId)}/copy-to-user`,
+      {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        credentials: 'same-origin',
+        body: JSON.stringify({email: clean}),
+      }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({detail: res.statusText}));
+      throw new Error(err.detail || 'send failed');
+    }
+    const data = await res.json();
+    setStatus(`Sent to ${data.target.email} as ${data.frame.id}.`, 'success');
+    setTimeout(() => setStatus(''), 3000);
+  } catch (e) {
+    setStatus('Send failed: ' + e.message, 'error');
+  }
+}
+
+async function onImportFile(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = ''; // allow re-uploading the same file
+  if (!file) return;
+  try {
+    setStatus('Importing…');
+    const text = await file.text();
+    const res = await fetch('/api/frames/import', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      credentials: 'same-origin',
+      body: JSON.stringify({text}),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({detail: res.statusText}));
+      throw new Error(err.detail || 'import failed');
+    }
+    const data = await res.json();
+    setStatus(`Imported as ${data.frame.id}.`, 'success');
+    setTimeout(() => setStatus(''), 2500);
+    await reloadFrameList();
+    await onSelectFrame(data.frame.id);
+  } catch (err) {
+    setStatus('Import failed: ' + err.message, 'error');
+  }
+}
+
 async function deleteFrame() {
   if (!state.frameId) return;
   if (!confirm(`Delete frame "${state.frameId}"? Canvases referencing it keep their frame_id (broken until re-created).`)) return;
@@ -842,6 +915,8 @@ async function deleteFrame() {
     document.getElementById('empty-pane').style.display = 'flex';
     document.getElementById('frame-body').style.display = 'none';
     document.getElementById('delete-frame-btn').disabled = true;
+    document.getElementById('export-frame-btn').disabled = true;
+    document.getElementById('send-frame-btn').disabled = true;
     await reloadFrameList();
   } catch (e) {
     setStatus('Delete failed: ' + e.message, 'error');
@@ -874,6 +949,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('revert-btn').addEventListener('click', revert);
   document.getElementById('new-frame-btn').addEventListener('click', newFrame);
   document.getElementById('delete-frame-btn').addEventListener('click', deleteFrame);
+  document.getElementById('export-frame-btn').addEventListener('click', exportFrame);
+  document.getElementById('send-frame-btn').addEventListener('click', sendFrameToUser);
+  document.getElementById('import-frame-btn').addEventListener('click', () => {
+    document.getElementById('import-frame-file').click();
+  });
+  document.getElementById('import-frame-file').addEventListener('change', onImportFile);
   document.getElementById('scan-btn').addEventListener('click', scanTokens);
   document.getElementById('add-field-btn').addEventListener('click', () => {
     addFieldRow('', '');

@@ -233,6 +233,10 @@ header button.danger { color: #A12C7B; }
   <h1>Frame Editor</h1>
   <button id="save-btn" class="primary" disabled>Save</button>
   <button id="revert-btn" disabled>Revert</button>
+  <button id="export-frame-btn" disabled title="Download this frame as a .drawlang file">Export</button>
+  <button id="send-frame-btn" disabled title="Send a copy of this frame to another user">Send to user…</button>
+  <button id="import-frame-btn" title="Import a .drawlang frame file into your frames">Import…</button>
+  <input type="file" id="import-frame-file" accept=".drawlang,.txt,text/plain" style="display:none">
   <span class="status" id="status">Loading…</span>
 </header>
 <div class="main">

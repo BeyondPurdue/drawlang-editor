@@ -14,6 +14,7 @@ lives in the interpreter — the editor knows nothing about opcodes.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -75,6 +76,15 @@ def _init_storage() -> None:
     _auth.init()
     _ownership.apply()
     _stats.init()
+    # v0.8.1: on first run, give the drawlang@ curator account editable
+    # copies of the legacy shared frames (owner_id NULL). It already has
+    # write access to shared frames via `_is_drawlang_source_user`, but
+    # working from a personally-owned copy is the cleaner curation flow
+    # and keeps the shared originals as a safety net.
+    try:
+        _seed_drawlang_source_frames()
+    except Exception as exc:
+        print(f"[startup] drawlang@ frame seed failed: {exc}")
     _demo_reset.start()
     # Sweep any pre-DB filesystem drawings into the DB, once.
     legacy = Path(__file__).resolve().parent.parent / "user_drawings"
@@ -292,16 +302,70 @@ def _authorize_canvas(id_or_slug, user: dict) -> None:
     raise HTTPException(status_code=404, detail="canvas not found")
 
 
+def _is_drawlang_source_user(user: dict) -> bool:
+    """True when the caller is the drawlang@ curator account (demo source).
+
+    That account is the source of truth for the frames every new user is
+    seeded with; it is granted write access to legacy shared/unowned
+    frames so its edits can propagate on the next user approval / demo
+    reset.  Ordinary users still cannot edit shared frames.
+    """
+    try:
+        src_id = _auth.demo_source_user_id()
+    except Exception:
+        return False
+    return src_id is not None and int(user.get("id", -1)) == int(src_id)
+
+
+def _seed_drawlang_source_frames() -> None:
+    """On first run give drawlang@ ownership of the legacy shared frames.
+
+    The legacy frames (a3-grid, a3-empty, a3-panglima) are seeded from
+    disk with owner_id NULL and then backfilled by `ownership.apply()`
+    to the admin.  That leaves admin as owner of what should be the
+    curator's frames.  On first run — while drawlang@ owns zero frames
+    — hand every legacy admin/NULL-owned frame to drawlang@ so the
+    account can curate them directly and new users get seeded from a
+    real source.  Idempotent: skipped as soon as drawlang@ owns anything.
+    """
+    src_id = _auth.demo_source_user_id()
+    admin_id = _admin_user_id()
+    if src_id is None:
+        return
+    with _frames_mod._lock:  # type: ignore[attr-defined]
+        c = _frames_mod._conn()  # type: ignore[attr-defined]
+        owned_count = c.execute(
+            "SELECT COUNT(*) FROM frames WHERE owner_id = ?", (int(src_id),)
+        ).fetchone()[0]
+        if owned_count > 0:
+            # drawlang@ already curates its own set — do not re-seed.
+            return
+        if admin_id is None:
+            reassigned = c.execute(
+                "UPDATE frames SET owner_id = ? WHERE owner_id IS NULL",
+                (int(src_id),),
+            ).rowcount
+        else:
+            reassigned = c.execute(
+                "UPDATE frames SET owner_id = ? "
+                "WHERE owner_id IS NULL OR owner_id = ?",
+                (int(src_id), int(admin_id)),
+            ).rowcount
+    if reassigned:
+        print(f"[startup] transferred {reassigned} legacy shared frame(s) to drawlang@")
+
+
 def _authorize_frame_write(frame_id: str, user: dict) -> None:
     """Frames may be admin-owned (shared) or user-owned.
 
-    Read access is checked by the list/get returning shared rows. Write
-    access requires either ownership or admin.
+    Read access is checked by list/get returning shared rows. Write
+    access requires either ownership, admin, or the drawlang@ curator
+    account (for shared/unowned frames).
     """
     owner_id = _frames_mod.get_frame_owner(frame_id)
     if owner_id is None:
-        # Row doesn't exist, or unowned (legacy). Admin can edit; others can't.
-        if _auth.is_admin(user):
+        # Row doesn't exist, or unowned (legacy). Admin + drawlang@ can edit.
+        if _auth.is_admin(user) or _is_drawlang_source_user(user):
             return
         raise HTTPException(status_code=403, detail="cannot edit shared frame")
     if int(user["id"]) == owner_id or _auth.is_admin(user):
@@ -451,6 +515,17 @@ def api_admin_users_pending(request: Request) -> dict:
 def api_admin_users_approve(user_id: int, request: Request) -> dict:
     _require_admin(request)
     _auth.approve_user(user_id)
+    # Seed the new user with a copy of every drawlang@ frame so they
+    # start with the curated template set.  Best-effort: never blocks the
+    # approval itself.
+    try:
+        src_id = _auth.demo_source_user_id()
+        if src_id is not None and int(src_id) != int(user_id):
+            n = _frames_mod.seed_frames_for_user(int(user_id), int(src_id))
+            if n:
+                print(f"[approve] seeded {n} frame(s) for user {user_id} from drawlang@")
+    except Exception as exc:
+        print(f"[approve] frame seeding for user {user_id} failed: {exc}")
     return {"ok": True}
 
 
@@ -1139,6 +1214,7 @@ def api_list_frames(request: Request) -> JSONResponse:
         "frames": _frames_mod.list_frames(
             owner_id=int(user["id"]),
             admin_id=_admin_user_id(),
+            source_owner_id=_auth.demo_source_user_id(),
         )
     })
 
@@ -1304,6 +1380,108 @@ def api_frame_delete(frame_id: str, request: Request) -> JSONResponse:
     if not ok:
         raise HTTPException(status_code=404, detail=f"frame {frame_id!r} not found")
     return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Frame export / import / copy-to-user (v0.8.1)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/frames/{frame_id}/export")
+def api_frame_export(frame_id: str, request: Request) -> Response:
+    """Download a frame as a self-contained ``.drawlang`` file.
+
+    The file is valid drawlang: everything the metadata header adds is
+    ``#``-prefixed comments the interpreter already ignores.  Any user
+    who can *see* a frame (own + admin-shared + unowned) can export it.
+    """
+    user = _require_user(request)
+    # Authorise read: reuse the list_frames filter to check visibility.
+    visible_ids = {
+        f["id"] for f in _frames_mod.list_frames(
+            owner_id=int(user["id"]), admin_id=_admin_user_id(),
+            source_owner_id=_auth.demo_source_user_id(),
+        )
+    }
+    if frame_id not in visible_ids:
+        raise HTTPException(status_code=404, detail=f"frame {frame_id!r} not found")
+    try:
+        text = _frames_mod.export_drawlang(frame_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"frame {frame_id!r} not found")
+    return Response(
+        content=text,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{frame_id}.drawlang"',
+        },
+    )
+
+
+class FrameImportRequest(BaseModel):
+    text: str
+    forced_id: str | None = None
+
+
+@app.post("/api/frames/import")
+def api_frame_import(req: FrameImportRequest, request: Request) -> JSONResponse:
+    """Create a frame from an exported ``.drawlang`` file.  Owned by caller.
+
+    Body:
+        {"text": "# @drawlang-frame v1 ...", "forced_id": "optional"}
+    Returns the created frame's composed view or 400 on parse errors.
+    Id collisions are resolved by appending ``-2``/``-3``/… .
+    """
+    user = _require_user(request)
+    try:
+        data = _frames_mod.import_drawlang(
+            req.text, owner_id=int(user["id"]), forced_id=req.forced_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse({"ok": True, "frame": data})
+
+
+class FrameCopyToUserRequest(BaseModel):
+    email: str
+
+
+@app.post("/api/frames/{frame_id}/copy-to-user")
+def api_frame_copy_to_user(
+    frame_id: str, req: FrameCopyToUserRequest, request: Request,
+) -> JSONResponse:
+    """Copy a frame the caller can see to another user's account.
+
+    Anyone can push a frame they own (or a shared one they can read) to
+    any other registered user by email.  The new frame keeps the same
+    ``id`` if free on the target, else the id is suffixed ``-2``/``-3``/… .
+    Returns the created frame's composed view.
+    """
+    caller = _require_user(request)
+    target = _auth.get_user_by_email(req.email)
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"no user with email {req.email!r}")
+    if not _auth.is_active(target):
+        raise HTTPException(status_code=400, detail="target user is not active")
+    # Enforce read visibility on the source frame (same rule as export).
+    visible_ids = {
+        f["id"] for f in _frames_mod.list_frames(
+            owner_id=int(caller["id"]), admin_id=_admin_user_id(),
+            source_owner_id=_auth.demo_source_user_id(),
+        )
+    }
+    if frame_id not in visible_ids:
+        raise HTTPException(status_code=404, detail=f"frame {frame_id!r} not found")
+    try:
+        data = _frames_mod.duplicate_frame(
+            frame_id, new_owner_id=int(target["id"]),
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"frame {frame_id!r} not found")
+    return JSONResponse({
+        "ok": True,
+        "frame": data,
+        "target": {"id": target["id"], "email": target["email"]},
+    })
 
 
 # ---------------------------------------------------------------------------
