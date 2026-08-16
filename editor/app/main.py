@@ -19,6 +19,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -642,6 +643,75 @@ def api_admin_stats_countries(request: Request, limit: int = 30) -> dict:
 def api_admin_stats_recent(request: Request, limit: int = 100) -> dict:
     _require_admin(request)
     return {"visits": _stats.recent(limit=limit)}
+
+
+@app.get("/api/admin/daily-summary")
+def api_admin_daily_summary(request: Request) -> dict:
+    """One-shot bundle for the daily-report email.
+
+    Combines: user counts (all/active/pending, new-24h list),
+    content counts (canvases/frames/library, new-24h), traffic
+    summary from _stats, and the last demo reset payload.
+
+    Only pulls what the daily email actually needs — keep this
+    endpoint cheap so the scheduled task doesn't fan out.
+    """
+    _require_admin(request)
+    c = _auth._conn()
+
+    # Users.
+    users_total = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    users_active = c.execute(
+        "SELECT COUNT(*) FROM users WHERE status = 'active'"
+    ).fetchone()[0]
+    users_pending = c.execute(
+        "SELECT COUNT(*) FROM users WHERE status = 'pending'"
+    ).fetchone()[0]
+    # created_at is a unix float. "last 24h" = >= now - 86400.
+    cutoff = time.time() - 86400
+    new_users = [
+        {
+            "id": r[0], "email": r[1], "display_name": r[2],
+            "role": r[3], "status": r[4], "created_at": r[5],
+        }
+        for r in c.execute(
+            "SELECT id, email, display_name, role, status, created_at "
+            "FROM users WHERE created_at >= ? ORDER BY created_at DESC",
+            (cutoff,),
+        ).fetchall()
+    ]
+
+    # Canvases.
+    canvases_total = c.execute("SELECT COUNT(*) FROM canvases").fetchone()[0]
+    canvases_new_24h = c.execute(
+        "SELECT COUNT(*) FROM canvases WHERE created_at >= ?", (cutoff,),
+    ).fetchone()[0]
+    canvases_updated_24h = c.execute(
+        "SELECT COUNT(*) FROM canvases WHERE updated_at >= ?", (cutoff,),
+    ).fetchone()[0]
+
+    # Frames + library.
+    frames_total = c.execute("SELECT COUNT(*) FROM frames").fetchone()[0]
+    library_total = c.execute("SELECT COUNT(*) FROM library_items").fetchone()[0]
+
+    return {
+        "generated_at": time.time(),
+        "users": {
+            "total": users_total,
+            "active": users_active,
+            "pending": users_pending,
+            "new_24h": new_users,
+        },
+        "content": {
+            "canvases_total": canvases_total,
+            "canvases_new_24h": canvases_new_24h,
+            "canvases_updated_24h": canvases_updated_24h,
+            "frames_total": frames_total,
+            "library_total": library_total,
+        },
+        "traffic": _stats.summary(),
+        "demo_reset": _demo_reset.last_reset(),
+    }
 
 
 # ---------------------------------------------------------------------------
