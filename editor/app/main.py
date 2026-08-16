@@ -1214,7 +1214,6 @@ def api_list_frames(request: Request) -> JSONResponse:
         "frames": _frames_mod.list_frames(
             owner_id=int(user["id"]),
             admin_id=_admin_user_id(),
-            source_owner_id=_auth.demo_source_user_id(),
         )
     })
 
@@ -1399,7 +1398,6 @@ def api_frame_export(frame_id: str, request: Request) -> Response:
     visible_ids = {
         f["id"] for f in _frames_mod.list_frames(
             owner_id=int(user["id"]), admin_id=_admin_user_id(),
-            source_owner_id=_auth.demo_source_user_id(),
         )
     }
     if frame_id not in visible_ids:
@@ -1466,7 +1464,6 @@ def api_frame_copy_to_user(
     visible_ids = {
         f["id"] for f in _frames_mod.list_frames(
             owner_id=int(caller["id"]), admin_id=_admin_user_id(),
-            source_owner_id=_auth.demo_source_user_id(),
         )
     }
     if frame_id not in visible_ids:
