@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Account — DrawLang Editor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/app.css">
+  <style>
+    /* app.css locks html/body for the canvas editor. Undo that. */
+    html, body { height:auto; overflow-x:hidden; overflow-y:auto; }
+    body { background:#f7f6f2; color:#28251d;
+           font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+           margin:0; }
+    .wrap { max-width:640px; margin:32px auto 60px; padding:0 24px; }
+    h1 { margin:0 0 4px; font-size:22px; font-weight:600; }
+    .who { font-size:13px; color:#7a7974; margin:0 0 24px; }
+    .who code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+                background:#f2f0ea; padding:1px 6px; border-radius:3px; font-size:12px; }
+    section { background:#fff; border:1px solid #d4d1ca; border-radius:8px;
+              padding:20px 22px; margin-bottom:20px; }
+    section h2 { margin:0 0 4px; font-size:15px; font-weight:600; }
+    section .sec-hint { font-size:12px; color:#7a7974; margin:0 0 16px; }
+    label { display:block; font-size:12px; color:#7a7974;
+            margin:12px 0 4px; font-weight:500; }
+    input[type=password] { width:100%; padding:8px 10px; border:1px solid #d4d1ca;
+      border-radius:4px; font-size:14px; background:#fbfbf9; color:#28251d;
+      font-family:inherit; box-sizing:border-box; }
+    input:focus { outline:2px solid #01696f; outline-offset:-1px; border-color:#01696f; }
+    .row { display:flex; align-items:center; gap:12px; margin-top:20px; }
+    button.primary { padding:10px 16px; border:0; border-radius:4px;
+      background:#01696f; color:#fbfbf9; font-size:14px; font-weight:500;
+      cursor:pointer; font-family:inherit; }
+    button.primary:hover { background:#0c4e54; }
+    button.primary:disabled { opacity:.5; cursor:not-allowed; }
+    .msg { font-size:13px; min-height:18px; }
+    .msg.err { color:#a12c7b; }
+    .msg.ok  { color:#437a22; }
+    .rule { font-size:12px; color:#7a7974; margin:0; }
+  </style>
+  <script src="/static/nav.js" defer></script>
+</head>
+<body>
+<div id="app-nav"></div>
+<header></header>
+<div class="wrap">
+  <h1>Account</h1>
+  <p class="who">Signed in as <code id="who-email">…</code></p>
+
+  <section>
+    <h2>Change password</h2>
+    <p class="sec-hint">
+      Enter your current password and pick a new one (minimum 8 characters,
+      and different from the current one). Every other device where you are
+      signed in will be signed out; this browser stays signed in.
+    </p>
+    <form id="pwform" autocomplete="off">
+      <label for="cur">Current password</label>
+      <input type="password" id="cur" name="current_password"
+             autocomplete="current-password" required minlength="1">
+      <label for="np1">New password</label>
+      <input type="password" id="np1" name="new_password"
+             autocomplete="new-password" required minlength="8">
+      <label for="np2">Repeat new password</label>
+      <input type="password" id="np2" name="new_password_repeat"
+             autocomplete="new-password" required minlength="8">
+      <div class="row">
+        <button type="submit" class="primary" id="submit">Change password</button>
+        <div class="msg" id="msg" role="status" aria-live="polite"></div>
+      </div>
+    </form>
+  </section>
+</div>
+<script src="/static/account.js"></script>
+</body>
+</html>

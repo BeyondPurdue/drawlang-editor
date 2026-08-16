@@ -51,6 +51,18 @@
       badge.appendChild(d);
     }
 
+    // Everybody except the shared demo user gets a self-service account
+    // link — the demo login is a shared account that resets nightly so
+    // per-user settings are meaningless there.
+    if (u.role !== 'demo') {
+      const acc = document.createElement('a');
+      acc.href = '/account';
+      acc.textContent = 'Account';
+      acc.title = 'Change your password';
+      acc.style.cssText = 'color:#01696f;text-decoration:none;';
+      badge.appendChild(acc);
+    }
+
     const logout = document.createElement('a');
     logout.href = '/logout';
     logout.textContent = 'Sign out';

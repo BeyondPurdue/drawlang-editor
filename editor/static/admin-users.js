@@ -72,7 +72,36 @@
       };
       actions.appendChild(b);
     }
+    // Reset password is available for every non-admin. Admins should
+    // change their own password via /account (protects against a stray
+    // click wiping the admin login on the same page they are using).
+    if (u.role !== 'admin') {
+      const b = document.createElement('button');
+      b.textContent = 'Reset password';
+      b.onclick = function () { resetPassword(u); };
+      actions.appendChild(b);
+    }
     return tr;
+  }
+
+  async function resetPassword(u) {
+    const pw = prompt(
+      'Set a new password for ' + u.email + '\n' +
+      '(minimum 8 characters). Every active session for this user will be signed out.'
+    );
+    if (pw == null) return;              // cancelled
+    if (pw.length < 8) {
+      toast('password must be at least 8 characters');
+      return;
+    }
+    try {
+      await api('POST', '/api/admin/users/' + u.id + '/reset-password', {
+        new_password: pw,
+      });
+      toast('password reset for ' + u.email);
+    } catch (e) {
+      toast(e.message);
+    }
   }
 
   async function act(op, u) {

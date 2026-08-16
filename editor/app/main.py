@@ -334,6 +334,15 @@ class RegisterRequest(BaseModel):
     reason: str = ""
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str
+
+
 def _set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(
         key=_auth.COOKIE_NAME,
@@ -396,6 +405,29 @@ def api_auth_me(request: Request) -> dict:
     return {"ok": True, "user": _auth._public_user(user)}
 
 
+@app.post("/api/auth/change-password")
+def api_auth_change_password(
+    req: ChangePasswordRequest, request: Request, response: Response,
+) -> dict:
+    user = _auth.current_user(request)
+    if user is None:
+        raise HTTPException(status_code=401, detail="not signed in")
+    try:
+        _auth.change_password(
+            user_id=int(user["id"]),
+            current_password=req.current_password,
+            new_password=req.new_password,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # change_password() destroyed every session for this user, including
+    # this browser's. Re-issue a fresh session so the caller stays
+    # signed in instead of being kicked to /login.
+    token = _auth.create_session(int(user["id"]))
+    _set_session_cookie(response, token)
+    return {"ok": True}
+
+
 # --- Admin endpoints ------------------------------------------------------
 
 @app.get("/api/admin/users")
@@ -436,6 +468,18 @@ def api_admin_users_delete_post(user_id: int, request: Request) -> dict:
     return {"ok": True}
 
 
+@app.post("/api/admin/users/{user_id}/reset-password")
+def api_admin_users_reset_password(
+    user_id: int, req: AdminResetPasswordRequest, request: Request,
+) -> dict:
+    _require_admin(request)
+    try:
+        _auth.admin_reset_password(user_id, req.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
 @app.delete("/api/admin/users/{user_id}")
 def api_admin_users_delete(user_id: int, request: Request) -> dict:
     _require_admin(request)
@@ -469,6 +513,14 @@ def logout_page(request: Request) -> RedirectResponse:
 def admin_users_page(request: Request) -> HTMLResponse:
     _require_admin(request)
     return HTMLResponse((STATIC_DIR / "admin-users.html").read_text(encoding="utf-8"))
+
+
+@app.get("/account", response_class=HTMLResponse)
+def account_page(request: Request):
+    user = _auth.current_user(request)
+    if user is None:
+        return RedirectResponse(url="/login", status_code=302)
+    return HTMLResponse((STATIC_DIR / "account.html").read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------

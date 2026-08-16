@@ -387,6 +387,60 @@ def disable_user(user_id: int) -> None:
         c.commit()
 
 
+def change_password(user_id: int, current_password: str, new_password: str) -> None:
+    """Self-service password change. Verifies the current password first,
+    enforces the same 8-char minimum as register(), and destroys every
+    session belonging to this user so other logged-in browsers are
+    kicked. Raises ValueError on any check failure.
+    """
+    if len(new_password) < 8:
+        raise ValueError("new password must be at least 8 characters")
+    if new_password == current_password:
+        raise ValueError("new password must differ from the current one")
+    row = _conn().execute(
+        "SELECT password_hash FROM users WHERE id = ?", (user_id,)
+    ).fetchone()
+    if row is None:
+        raise ValueError("user not found")
+    stored_hash = row[0] if not isinstance(row, sqlite3.Row) else row["password_hash"]
+    if not verify_password(current_password, stored_hash):
+        raise ValueError("current password is incorrect")
+    with _lock:
+        c = _conn()
+        c.execute(
+            "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+            (hash_password(new_password), time.time(), user_id),
+        )
+        # Kill every other session for this user so a stolen cookie stops
+        # working. The caller re-issues a fresh session for the current
+        # browser after this returns.
+        c.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        c.commit()
+
+
+def admin_reset_password(user_id: int, new_password: str) -> None:
+    """Admin-forced password reset. No current-password check; caller
+    must be an admin (enforced at the route layer). Same 8-char minimum.
+    All sessions belonging to the target user are destroyed so the user
+    is forced to log in again with the new password.
+    """
+    if len(new_password) < 8:
+        raise ValueError("new password must be at least 8 characters")
+    row = _conn().execute(
+        "SELECT id FROM users WHERE id = ?", (user_id,)
+    ).fetchone()
+    if row is None:
+        raise ValueError("user not found")
+    with _lock:
+        c = _conn()
+        c.execute(
+            "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+            (hash_password(new_password), time.time(), user_id),
+        )
+        c.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        c.commit()
+
+
 def delete_user(user_id: int) -> None:
     """Delete a user AND all their owned assets (canvases, frames, symbols)."""
     with _lock:
@@ -506,7 +560,9 @@ __all__ = [
     "SCHEMA", "init", "hash_password", "verify_password",
     "register", "authenticate", "get_user_by_id", "get_user_by_email",
     "list_pending", "list_all_users",
-    "approve_user", "disable_user", "delete_user", "demo_user_id",
+    "approve_user", "disable_user", "delete_user",
+    "change_password", "admin_reset_password",
+    "demo_user_id",
     "demo_source_user_id",
     "DEMO_SOURCE_EMAIL", "DEMO_SOURCE_DISPLAY",
     "create_session", "get_session_user", "destroy_session", "cleanup_expired_sessions",
