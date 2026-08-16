@@ -119,16 +119,28 @@ def _delete_all_for_owner(demo_id: int) -> tuple[int, int, int]:
     return n_canvases, n_frames, n_library
 
 
-def _copy_source_to_demo(source_id: int, demo_id: int) -> tuple[int, int]:
-    """Copy every canvas and library item owned by source_id into demo_id.
+def _copy_source_to_demo(source_id: int, demo_id: int) -> tuple[int, int, int]:
+    """Copy every canvas, frame, and library item owned by source_id into demo_id.
 
-    Returns (n_canvases_copied, n_library_copied). Preserves canvas
-    slug/name and frame binding via _canvases.copy_canvas, which does
+    Returns (n_canvases_copied, n_frames_copied, n_library_copied). Preserves
+    canvas slug/name and frame binding via _canvases.copy_canvas, which does
     the deep clone (canvas + statements + field_values). Never raises;
     per-item errors are logged and skipped.
+
+    Frames are copied FIRST so that canvases (which reference frames by id)
+    can find them when they get copied. The copy uses seed_frames_for_user,
+    which allocates a new unique id per frame (e.g. a3-grid -> a3-grid-2
+    if the target already has an a3-grid).
     """
     n_canvases = 0
+    n_frames = 0
     n_library = 0
+
+    # Frames first — canvases may reference them.
+    try:
+        n_frames = _frames.seed_frames_for_user(demo_id, source_id)
+    except Exception as exc:
+        log.warning("demo reseed: could not copy frames from source: %s", exc)
 
     src_canvases = _canvases.list_canvases(owner_id=source_id)
     for row in src_canvases:
@@ -196,7 +208,7 @@ def _copy_source_to_demo(source_id: int, demo_id: int) -> tuple[int, int]:
                 "demo reseed: failed to copy library item %s: %s",
                 item.get("slug"), exc,
             )
-    return n_canvases, n_library
+    return n_canvases, n_frames, n_library
 
 
 def _reseed_fallback(demo_id: int) -> None:
@@ -243,15 +255,17 @@ def _reseed(demo_id: int) -> dict:
     source_id = _auth.demo_source_user_id()
     if source_id is not None:
         src_canvases = _canvases.list_canvases(owner_id=source_id)
-        if src_canvases:
-            n_c, n_l = _copy_source_to_demo(source_id, demo_id)
+        src_frames = _frames.list_frames_owned_by(source_id)
+        if src_canvases or src_frames:
+            n_c, n_f, n_l = _copy_source_to_demo(source_id, demo_id)
             log.info(
-                "[demo_reset] copied from source: %s canvases, %s library items",
-                n_c, n_l,
+                "[demo_reset] copied from source: %s canvases, %s frames, %s library items",
+                n_c, n_f, n_l,
             )
             return {
                 "mode": "copy_from_source",
                 "canvases_copied": n_c,
+                "frames_copied": n_f,
                 "library_copied": n_l,
             }
     _reseed_fallback(demo_id)
