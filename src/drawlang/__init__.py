@@ -25,6 +25,7 @@ Public entry point:
     render(program_text, backend="svg")   -> SVG string
     render(program_text, backend="ps")    -> PostScript string
     render(program_text, backend="pdf")   -> PDF bytes
+    render(program_text, backend="dxf")   -> DXF (AutoCAD 2000 ASCII) string
 """
 
 from .errors import DrawLangError, LexicalError, SemanticError
@@ -72,7 +73,7 @@ def render(program_text: str, backend: str = "svg", **backend_options):
     """
     Convenience entry point: parse a program and render it with the named backend.
 
-    backend: "svg" | "ps" | "pdf"
+    backend: "svg" | "ps" | "pdf" | "dxf"
     backend_options: passed to the backend constructor (width, height, unit, etc.)
     """
     if backend == "svg":
@@ -88,8 +89,13 @@ def render(program_text: str, backend: str = "svg", **backend_options):
     elif backend == "pdf":
         from .backends.pdf import render_pdf
         return render_pdf(program_text, **backend_options)
+    elif backend == "dxf":
+        from .backends.dxf import DXFBackend
+        be = DXFBackend(**backend_options)
+        interpret(program_text, be)
+        return be.finalize()
     else:
-        raise ValueError(f"unknown backend: {backend!r}. Use 'svg', 'ps', or 'pdf'.")
+        raise ValueError(f"unknown backend: {backend!r}. Use 'svg', 'ps', 'pdf', or 'dxf'.")
 
 
 __all__ = [

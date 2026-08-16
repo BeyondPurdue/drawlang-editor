@@ -1944,6 +1944,29 @@ $("export-pdf").addEventListener("click", async () => {
   }
 });
 
+// DXF export — AutoCAD-compatible R2000 vector file, opens in every mainstream CAD.
+// One layer per pen colour, mm units, y-up (matches DrawLang, no coordinate flip).
+const _dxfBtn = document.getElementById("export-dxf");
+if (_dxfBtn) {
+  _dxfBtn.addEventListener("click", async () => {
+    if (!state.currentCanvas) { alert("Choose a canvas first"); return; }
+    try {
+      const progRes = await fetch(`/api/canvases/${state.currentCanvas}/program`);
+      if (!progRes.ok) throw new Error(await progRes.text());
+      const program = await progRes.text();
+      const res = await fetch("/export/dxf", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ program }),
+      });
+      if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+      _downloadBlob(await res.blob(), `${state.currentCanvas}.dxf`);
+    } catch (err) {
+      alert("DXF export failed: " + err.message);
+    }
+  });
+}
+
 // v0.7.6: Frame binding is set through the “change…” link next to the chip.
 // The old inline <select id="frame-select"> is gone — all state.currentFrameId
 // changes go through the modal + PATCH /api/canvases/{slug}.

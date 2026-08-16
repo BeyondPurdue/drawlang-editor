@@ -929,6 +929,26 @@ def export_pdf(req: RenderRequest) -> Response:
         )
 
 
+@app.post("/export/dxf")
+def export_dxf(req: RenderRequest) -> Response:
+    """Render the program to AutoCAD DXF (AC1015 ASCII).
+
+    DXF is the industry-standard CAD interchange format. Every AutoCAD
+    version, Bricscad, LibreCAD, DraftSight, Fusion 360, and every mainstream
+    CAM tool can open the output directly. Units are millimetres, coordinates
+    are y-up (matches DrawLang), one AutoCAD layer per pen colour.
+    """
+    try:
+        dxf_text = render(req.program, "dxf")
+    except DrawLangError as e:
+        raise HTTPException(400, f"{type(e).__name__}: {e}")
+    return Response(
+        content=dxf_text,
+        media_type="application/dxf",
+        headers={"Content-Disposition": 'attachment; filename="drawing.dxf"'},
+    )
+
+
 @app.get("/examples")
 def examples() -> JSONResponse:
     """
