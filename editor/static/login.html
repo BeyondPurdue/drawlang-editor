@@ -185,6 +185,23 @@
     .demo-actions a.wiki-link:hover { text-decoration: underline; }
     .demo-actions .sep { color: var(--faint); }
 
+    /* Passive hint shown ONLY on small screens — tells phone/small‑tablet
+       visitors up front that the editor is desktop‑only, so the demo button
+       doesn't feel like a broken link when the JS size gate blocks it. */
+    .demo-small-screen-note {
+      display: none;
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-left: 3px solid var(--accent);
+      background: rgba(1, 105, 111, 0.06);
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+    @media (max-width: 1023px) {
+      .demo-small-screen-note { display: block; }
+    }
+
     /* 16:9 video placeholder — real <video> or <iframe> drops in later.   */
     .demo-video {
       position: relative;
@@ -687,6 +704,11 @@
           <a class="wiki-link" href="https://github.com/BeyondPurdue/drawlang-editor/blob/main/docs/spec/drawing-language-spec.md"
              target="_blank" rel="noopener">Language spec</a>
         </div>
+        <p class="demo-small-screen-note">
+          The demo editor is a three‑pane desktop workspace and won’t work
+          on this screen. Come back on a laptop or tablet (at least
+          1024 × 640 pixels) — or watch the 30‑second demo above.
+        </p>
       </div>
       <div class="demo-video">
         <video
