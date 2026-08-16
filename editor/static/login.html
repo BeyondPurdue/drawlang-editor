@@ -195,12 +195,15 @@
       border-radius: 6px;
       overflow: hidden;
     }
-    .demo-video iframe {
+    .demo-video iframe,
+    .demo-video video {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
       border: 0;
+      background: #000;
+      object-fit: contain;
     }
 
     /* ------------------------------------------------------------------ */
@@ -686,13 +689,16 @@
         </div>
       </div>
       <div class="demo-video">
-        <iframe
-          src="https://www.youtube.com/embed/VV3IseKq68Y?rel=0&modestbranding=1"
-          title="DrawLang demo"
-          frameborder="0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          referrerpolicy="strict-origin-when-cross-origin"
-          allowfullscreen></iframe>
+        <video
+          src="/static/DrawLang-promo-30s.mp4"
+          poster="/static/DrawLang-promo-30s.jpg"
+          title="DrawLang demo — hand sketch to PDF in 30 seconds"
+          controls
+          preload="metadata"
+          playsinline>
+          Your browser cannot play this video.
+          <a href="/static/DrawLang-promo-30s.mp4">Download the demo (MP4, 30s)</a>
+        </video>
       </div>
     </section>
 
